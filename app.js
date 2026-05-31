@@ -46,7 +46,6 @@ function escapeAttr(s) {
   return String(s).replace(/"/g, '&quot;');
 }
 function canonicalPlace(s) {
-  // Return content inside brackets if present, else the whole string
   if (!s) return '';
   const m = s.match(/\[([^\]]+)\]/);
   return (m ? m[1] : s).trim();
@@ -115,7 +114,6 @@ function readPeopleFromContainer(node, containerNS, containerLocal) {
   return uniqueSorted(out);
 }
 function readSubjects(node) {
-  // Only direct dc:subject children
   const subs = Array.from(node.childNodes)
     .filter(n => n.nodeType === 1 && n.namespaceURI === NS.dc && n.localName === 'subject')
     .map(el => el.textContent.trim())
@@ -236,8 +234,7 @@ fetch(DATA_URL)
     buildFilters(VIEW);
     render(VIEW);
     bindEvents();
-    initMap();
-    updateMap(VIEW);
+    // Map init is deferred until user shows it the first time
   })
   .catch(err => {
     document.getElementById('results').innerHTML = '<div class="card">Error: ' + (err && err.message ? err.message : err) + '</div>';
@@ -256,7 +253,6 @@ function buildFilters(items) {
   TOKENS.types = new Map(OPTIONS.types.map(v => [v, extractTokens(v)]));
   TOKENS.tags = new Map(OPTIONS.tags.map(v => [v, extractTokens(v)]));
 
-  // Populate selects according to current search inputs
   filterAndFill('f-authors', OPTIONS.authors, getSearch('s-authors'), 'authors');
   filterAndFill('f-editors', OPTIONS.editors, getSearch('s-editors'), 'editors');
   filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'), 'translators');
@@ -317,7 +313,6 @@ function bindEvents() {
   searchMap.forEach(([sId, fId, key]) => {
     const sEl = document.getElementById(sId);
     if (sEl) sEl.addEventListener('input', () => {
-      // Filter choices by search within CURRENTLY FILTERED subset
       const currentItems = currentFilteredItems();
       const sets = computeOptionSets(currentItems);
       const allowed = sets[{authors:'authors',editors:'editors',translators:'translators',languages:'languages',places:'places',types:'types',tags:'tags'}[key]];
@@ -332,7 +327,7 @@ function bindEvents() {
   // Enable click-to-toggle behavior for all multi-selects (no Ctrl needed), and allow unselect on second click
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags'].forEach(enableToggleMulti);
 
-  // Clickable chips in results to toggle filters
+  // Clickable chips in results to toggle filters (authors, editors, translators, type, language, place, year, tags)
   document.getElementById('results').addEventListener('click', (e) => {
     const t = e.target;
     if (!(t instanceof Element)) return;
@@ -356,10 +351,29 @@ function bindEvents() {
       if (yEl.value === String(val)) yEl.value = '';
       else yEl.value = String(val);
     } else {
-      toggleSelectValue(selId, val); // toggles selection
+      toggleSelectValue(selId, val);
     }
     applyFilters();
   });
+
+  // Toggle map show/hide
+  const btnMap = document.getElementById('btn-toggle-map');
+  if (btnMap) {
+    btnMap.addEventListener('click', () => {
+      const panel = document.getElementById('map-panel');
+      const isHidden = panel.hasAttribute('hidden');
+      if (isHidden) {
+        panel.removeAttribute('hidden');
+        btnMap.textContent = 'Hide map';
+        ensureMap();
+        updateMap(currentFilteredItems());
+        setTimeout(() => { if (map) map.invalidateSize(); }, 50);
+      } else {
+        panel.setAttribute('hidden', '');
+        btnMap.textContent = 'Show map';
+      }
+    });
+  }
 
   document.getElementById('btn-clear').addEventListener('click', clearFilters);
 }
@@ -397,7 +411,7 @@ function getMultiSelectValues(id) {
   return Array.from(sel.selectedOptions).map(o => o.value);
 }
 
-// Compute filtered items based on current selections (without recomputing options yet)
+// Compute filtered items based on current selections
 function currentFilteredItems() {
   const selAuthors = getMultiSelectValues('f-authors');
   const selEditors = getMultiSelectValues('f-editors');
@@ -444,7 +458,7 @@ function applyFilters() {
   filterAndFill('f-tags', sets.tags, getSearch('s-tags'), 'tags');
 
   render(filtered);
-  updateMap(filtered);
+  if (mapVisible()) updateMap(filtered);
 }
 
 function clearFilters() {
@@ -459,7 +473,7 @@ function clearFilters() {
   ['f-year-exact','f-year-min','f-year-max'].forEach(id => document.getElementById(id).value = '');
   buildFilters(VIEW);
   render(VIEW);
-  updateMap(VIEW);
+  if (mapVisible()) updateMap(VIEW);
 }
 
 function chips(values, key) {
@@ -512,6 +526,10 @@ function render(items) {
 /* ========= Map (Leaflet) ========= */
 let map, markersLayer;
 
+function ensureMap() {
+  if (map) return;
+  initMap();
+}
 function initMap() {
   const mapEl = document.getElementById('map');
   if (!mapEl) return;
@@ -520,67 +538,6 @@ function initMap() {
     attribution: '&copy; OpenStreetMap contributors'
   }).addTo(map);
   markersLayer = L.layerGroup().addTo(map);
-  map.setView([40.3, 45.3], 6); // Rough center around Armenia
+  map.setView([40.3, 45.3], 6);
 }
-
-function updateMap(items) {
-  if (!map || !markersLayer) return;
-  markersLayer.clearLayers();
-
-  // Aggregate by canonical place
-  const byPlace = new Map();
-  items.forEach(it => {
-    if (!it.place) return;
-    const canon = canonicalPlace(it.place);
-    if (!canon) return;
-    if (!byPlace.has(canon)) byPlace.set(canon, { label: canon, items: [] });
-    byPlace.get(canon).items.push(it);
-  });
-
-  const bounds = [];
-  const promises = [];
-
-  byPlace.forEach((obj, place) => {
-    const p = geocode(place).then(coord => {
-      if (!coord) return;
-      const count = obj.items.length;
-      const sample = obj.items.slice(0, 5).map(x => `• ${escapeHTML(x.title)}`).join('<br>');
-      const popup = `<strong>${escapeHTML(place)}</strong><br>${count} item(s)<br>${sample}${obj.items.length>5?'<br>…':''}`;
-      const marker = L.marker([coord.lat, coord.lon]).bindPopup(popup);
-      markersLayer.addLayer(marker);
-      bounds.push([coord.lat, coord.lon]);
-    }).catch(() => {});
-    promises.push(p);
-  });
-
-  Promise.all(promises).then(() => {
-    if (bounds.length) {
-      map.fitBounds(bounds, { padding: [20, 20] });
-    }
-  });
-}
-
-function geocode(place) {
-  const key = 'geo:' + place.toLowerCase();
-  const cached = localStorage.getItem(key);
-  if (cached) {
-    try {
-      const obj = JSON.parse(cached);
-      if (obj && typeof obj.lat === 'number' && typeof obj.lon === 'number') {
-        return Promise.resolve(obj);
-      }
-    } catch (_) {}
-  }
-  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(place);
-  return fetch(url, { headers: { 'Accept': 'application/json' }})
-    .then(r => r.json())
-    .then(arr => {
-      if (Array.isArray(arr) && arr[0]) {
-        const coord = { lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
-        localStorage.setItem(key, JSON.stringify(coord));
-        return coord;
-      }
-      return null;
-    })
-    .catch(() => null);
-}
+function mapVisible()
