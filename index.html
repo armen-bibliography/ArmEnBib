@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <title>Library</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="stylesheet" href="styles.css?v=5">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 </head>
 <body>
@@ -13,7 +13,7 @@
     <h1>Library</h1>
   </header>
 
-  <!-- Bilingual titles (not in header, not using h1/h2 tags) -->
+  <!-- Bilingual titles (between header and filters) -->
   <section id="site-titles">
     <div class="title-en-1">Armenian Studies Bibliography</div>
     <div class="title-en-2">ArmEn Project</div>
@@ -21,55 +21,56 @@
     <div class="title-hy-2">ArmEn նախագիծ</div>
   </section>
 
-  <section id="filters">
+  <!-- Filters -->
+  <section id="filters" aria-label="Filters">
     <div class="filter">
-      <label>Author</label>
+      <label for="s-authors">Author</label>
       <input type="text" id="s-authors" placeholder="type to filter authors">
-      <select id="f-authors" multiple></select>
+      <select id="f-authors" multiple aria-label="Authors"></select>
     </div>
     <div class="filter">
-      <label>Editor</label>
+      <label for="s-editors">Editor</label>
       <input type="text" id="s-editors" placeholder="type to filter editors">
-      <select id="f-editors" multiple></select>
+      <select id="f-editors" multiple aria-label="Editors"></select>
     </div>
     <div class="filter">
-      <label>Translator</label>
+      <label for="s-translators">Translator</label>
       <input type="text" id="s-translators" placeholder="type to filter translators">
-      <select id="f-translators" multiple></select>
+      <select id="f-translators" multiple aria-label="Translators"></select>
     </div>
     <div class="filter">
-      <label>Language</label>
+      <label for="s-language">Language</label>
       <input type="text" id="s-language" placeholder="type to filter languages">
-      <select id="f-language" multiple></select>
+      <select id="f-language" multiple aria-label="Languages"></select>
     </div>
     <div class="filter">
       <div class="label-row">
-        <label>Place</label>
+        <label for="s-place">Place</label>
         <button id="btn-toggle-map" type="button">Show map</button>
       </div>
       <input type="text" id="s-place" placeholder="type to filter places">
-      <select id="f-place" multiple></select>
+      <select id="f-place" multiple aria-label="Places"></select>
     </div>
     <div class="filter">
-      <label>Type</label>
+      <label for="s-type">Type</label>
       <input type="text" id="s-type" placeholder="type to filter types">
-      <select id="f-type" multiple></select>
+      <select id="f-type" multiple aria-label="Types"></select>
     </div>
     <div class="filter">
-      <label>Tags</label>
+      <label for="s-tags">Tags</label>
       <input type="text" id="s-tags" placeholder="type to filter tags">
-      <select id="f-tags" multiple></select>
+      <select id="f-tags" multiple aria-label="Tags"></select>
     </div>
     <div class="filter">
-      <label>Year exact</label>
-      <input type="number" id="f-year-exact" placeholder="e.g. 2021">
+      <label for="f-year-exact">Year exact</label>
+      <input type="number" id="f-year-exact" placeholder="e.g. 2021" aria-label="Exact year">
     </div>
     <div class="filter">
       <label>Year range</label>
       <div class="range">
-        <input type="number" id="f-year-min" placeholder="min">
+        <input type="number" id="f-year-min" placeholder="min" aria-label="Year minimum">
         <span>–</span>
-        <input type="number" id="f-year-max" placeholder="max">
+        <input type="number" id="f-year-max" placeholder="max" aria-label="Year maximum">
       </div>
     </div>
     <div class="actions">
@@ -81,16 +82,18 @@
     <span id="count">0</span> items
   </section>
 
-  <section id="map-panel" hidden>
+  <!-- Map panel -->
+  <section id="map-panel" hidden aria-label="Map">
     <div id="map"></div>
   </section>
 
-  <!-- Active filters bar (chips with x to remove) -->
-  <section id="active-filters" hidden></section>
+  <!-- Active filters bar (chips with x to remove). Populated by JS. -->
+  <section id="active-filters" hidden aria-label="Active filters"></section>
 
-  <section id="results"></section>
+  <!-- Results -->
+  <section id="results" aria-live="polite"></section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-  <script src="app.js?v=4"></script>
+  <script src="app.js?v=5"></script>
 </body>
 </html>
