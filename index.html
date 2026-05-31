@@ -1,128 +1,81 @@
-body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #222; }
-*, *::before, *::after { box-sizing: border-box; }
-html, body { max-width: 100%; overflow-x: hidden; }
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Library</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="styles.css?v=2">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
+</head>
+<body>
+  <header>
+    <h1>Library</h1>
+  </header>
 
-header { background:#f4f4f4; padding:12px 16px; border-bottom:1px solid #e5e5e5; }
-h1 { margin:0; font-size:20px; }
+  <section id="filters">
+    <div class="filter">
+      <label>Author</label>
+      <input type="text" id="s-authors" placeholder="type to filter authors">
+      <select id="f-authors" multiple></select>
+    </div>
+    <div class="filter">
+      <label>Editor</label>
+      <input type="text" id="s-editors" placeholder="type to filter editors">
+      <select id="f-editors" multiple></select>
+    </div>
+    <div class="filter">
+      <label>Translator</label>
+      <input type="text" id="s-translators" placeholder="type to filter translators">
+      <select id="f-translators" multiple></select>
+    </div>
+    <div class="filter">
+      <label>Language</label>
+      <input type="text" id="s-language" placeholder="type to filter languages">
+      <select id="f-language" multiple></select>
+    </div>
+    <div class="filter">
+      <label>Place</label>
+      <input type="text" id="s-place" placeholder="type to filter places">
+      <select id="f-place" multiple></select>
+    </div>
+    <div class="filter">
+      <label>Type</label>
+      <input type="text" id="s-type" placeholder="type to filter types">
+      <select id="f-type" multiple></select>
+    </div>
+    <div class="filter">
+      <label>Tags</label>
+      <input type="text" id="s-tags" placeholder="type to filter tags">
+      <select id="f-tags" multiple></select>
+    </div>
+    <div class="filter">
+      <label>Year exact</label>
+      <input type="number" id="f-year-exact" placeholder="e.g. 2021">
+    </div>
+    <div class="filter">
+      <label>Year range</label>
+      <div class="range">
+        <input type="number" id="f-year-min" placeholder="min">
+        <span>–</span>
+        <input type="number" id="f-year-max" placeholder="max">
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btn-clear">Clear filters</button>
+    </div>
+  </section>
 
-/* Filters: responsive from the start using CSS Grid */
-#filters {
-  display: grid;
-  grid-template-columns: repeat(auto, 4fr); /* fill row, wrap without overflow */
-  gap:12px;
-  padding:12px 16px;
-  border-bottom:1px solid #eee;
-  width: 100%;
-}
+  <section id="stats">
+    <span id="count">0</span> items
+  </section>
 
- @media (min-width: 768px) {
-  #filters {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
+  <section id="map-panel">
+    <div id="map"></div>
+  </section>
 
-/* Large screens (lg) and up */
-@media (min-width: 1024px) {
-  #filters {
-    grid-template-columns: repeat(3, 1fr);
-  }
-} 
+  <section id="results"></section>
 
-.filter {
-  display:flex;
-  flex-direction:column;
-  gap:6px;
-  min-width: 0;                 /* allow shrinking within grid cell */
-}
-
-.filter label { font-size:12px; color:#555; }
-
-.filter input,
-.filter select {
-  width:100%;
-  max-width:100%;
-  padding:6px;
-  border:1px solid #ddd;
-  border-radius:4px;
-  background:#fff;
-}
-
-.filter select[multiple] { min-height:140px; }
-
-.filter .range { display:flex; align-items:center; gap:6px; }
-.filter .range span { user-select:none; }
-
-/* Place the button at the end on wide screens, but it wraps like others */
-.actions {
-  display:flex;
-  align-items:flex-end;
-  justify-self:end;
-}
-
-button {
-  padding:8px 10px;
-  border:1px solid #ccc;
-  background:#fafafa;
-  border-radius:4px;
-  cursor:pointer;
-}
-button:hover { background:#f0f0f0; }
-
-#stats { padding:8px 16px; font-size:14px; color:#555; border-bottom:1px solid #eee; }
-
-#results {
-  padding:12px 16px;
-  display:grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap:12px;
-}
-
-.card {
-  border:1px solid #eee; border-radius:6px; padding:12px; background:#fff;
-  box-shadow: 0 1px 0 rgba(0,0,0,0.02);
-  overflow-wrap:anywhere;
-  word-break:break-word;
-}
-.title { font-weight:600; margin-bottom:6px; }
-.meta { font-size:13px; color:#555; margin:2px 0; }
-
-.badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
-.badge { font-size:12px; padding:2px 6px; background:#f0f6ff; border:1px solid #d0e3ff; border-radius:999px; }
-
-/* Clickable chips (for authors, editors, translators, type, language, place, tags) */
-.filter-chip {
-  display:inline-flex;
-  align-items:center;
-  gap:4px;
-  padding:2px 6px;
-  margin:0 2px;
-  font-size:12px;
-  line-height:1.4;
-  background:#f6f6f6;
-  border:1px solid #e2e2e2;
-  border-radius:999px;
-  cursor:pointer;
-  user-select:none;
-  color:#222;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.filter-chip:hover {
-  background:#ededed;
-  border-color:#d5d5d5;
-}
-.badge.filter-chip {
-  background:#f0f6ff;
-  border-color:#d0e3ff;
-}
-.badge.filter-chip:hover {
-  background:#e6f0ff;
-  border-color:#c2d9ff;
-}
-
-a { color:#0645ad; text-decoration:none; }
-a:hover { text-decoration:underline; }
-
-/* Narrow screens: single-column results if needed */
-@media (max-width: 360px) {
-  #results { grid-template-columns: 1fr; padding: 12px; }
-}
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
+  <script src="app.js?v=2"></script>
+</body>
+</html>
