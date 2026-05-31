@@ -2,24 +2,24 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>ArmEn_Bibliography</title>
+  <title>Library</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="styles.css?v=5">
+  <link rel="stylesheet" href="styles.css?v=6">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 </head>
 <body>
   <header>
     <img id="hero" src="Armen.jpeg" alt="Header image">
-    <h1>ArmEn_Bibliography</h1>
+    <h1>Library</h1>
   </header>
 
-  <!-- Bilingual titles (between header and filters) -->
- <!--  <section id="site-titles">
+  <!-- Bilingual titles (between header and filters, not using h1/h2 tags) -->
+  <section id="site-titles">
     <div class="title-en-1">Armenian Studies Bibliography</div>
     <div class="title-en-2">ArmEn Project</div>
     <div class="title-hy-1">Հայագիտական մատենագիտություն</div>
     <div class="title-hy-2">ArmEn նախագիծ</div>
-  </section> -->
+  </section>
 
   <!-- Filters -->
   <section id="filters" aria-label="Filters">
@@ -38,6 +38,7 @@
       <input type="text" id="s-translators" placeholder="type to filter translators">
       <select id="f-translators" multiple aria-label="Translators"></select>
     </div>
+
     <div class="filter">
       <label for="s-language">Language</label>
       <input type="text" id="s-language" placeholder="type to filter languages">
@@ -56,11 +57,27 @@
       <input type="text" id="s-type" placeholder="type to filter types">
       <select id="f-type" multiple aria-label="Types"></select>
     </div>
+
+    <!-- NEW: Publication (container/journal/book title) -->
+    <div class="filter">
+      <label for="s-publication">Publication</label>
+      <input type="text" id="s-publication" placeholder="type to filter publications">
+      <select id="f-publication" multiple aria-label="Publications"></select>
+    </div>
+
+    <!-- NEW: Publisher (organization name) -->
+    <div class="filter">
+      <label for="s-publisher">Publisher</label>
+      <input type="text" id="s-publisher" placeholder="type to filter publishers">
+      <select id="f-publisher" multiple aria-label="Publishers"></select>
+    </div>
+
     <div class="filter">
       <label for="s-tags">Tags</label>
       <input type="text" id="s-tags" placeholder="type to filter tags">
       <select id="f-tags" multiple aria-label="Tags"></select>
     </div>
+
     <div class="filter">
       <label for="f-year-exact">Year exact</label>
       <input type="number" id="f-year-exact" placeholder="e.g. 2021" aria-label="Exact year">
@@ -94,6 +111,6 @@
   <section id="results" aria-live="polite"></section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-  <script src="app.js?v=5"></script>
+  <script src="app.js?v=6"></script>
 </body>
 </html>
