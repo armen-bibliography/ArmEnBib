@@ -109,7 +109,11 @@ function readPeopleFromContainer(node, containerNS, containerLocal) {
   return uniqueSorted(out);
 }
 function readSubjects(node) {
-  const subs = allEls(node, NS.dc, 'subject').map(el => el.textContent.trim()).filter(Boolean);
+  // Only direct dc:subject children (avoid subjects inside nested isPartOf)
+  const subs = Array.from(node.childNodes)
+    .filter(n => n.nodeType === 1 && n.namespaceURI === NS.dc && n.localName === 'subject')
+    .map(el => el.textContent.trim())
+    .filter(Boolean);
   return uniqueSorted(subs);
 }
 function readPlace(node) {
@@ -126,11 +130,8 @@ function readPlace(node) {
   return loc ? loc.textContent.trim() : null;
 }
 function readURL(node) {
-  // Prefer rdf:about if it's a full URL
   const about = node.getAttributeNS(NS.rdf, 'about') || node.getAttribute('rdf:about') || '';
   if (about && /^(https?:|urn:)/i.test(about)) return about;
-
-  // Try dc:identifier/dcterms:URI/rdf:value
   const ident = firstEl(node, NS.dc, 'identifier');
   if (ident) {
     const uri = firstEl(ident, NS.dcterms, 'URI');
@@ -139,7 +140,6 @@ function readURL(node) {
       if (val) return val.textContent.trim();
     }
   }
-  // Fallback: direct dcterms:URI/rdf:value
   const anyURI = firstEl(node, NS.dcterms, 'URI');
   if (anyURI) {
     const val = firstEl(anyURI, NS.rdf, 'value');
@@ -148,33 +148,27 @@ function readURL(node) {
   return null;
 }
 function parseRDFItems(xmlDoc) {
-  // Select items that represent bibliographic entries: ones having z:itemType or with dc:title under bib:* but skip Memos and Attachments
   const candidates = [];
-  // any element with z:itemType
   const withItemType = allEls(xmlDoc, NS.z, 'itemType').map(el => el.parentNode).filter((v, i, a) => a.indexOf(v) === i);
   candidates.push(...withItemType);
-  // Also include bib:Article/Book/BookSection even if missing z:itemType
   ['Article', 'Book', 'BookSection', 'Journal'].forEach(local => {
     candidates.push(...Array.from(xmlDoc.getElementsByTagNameNS(NS.bib, local)));
   });
-  // Deduplicate
   const items = Array.from(new Set(candidates));
 
   const out = [];
   for (const item of items) {
-    // Skip memos and attachments
     const localName = (item.localName || '').toLowerCase();
     if (localName === 'memo' || localName === 'attachment') continue;
 
     const title = firstText(item, NS.dc, 'title');
-    if (!title) continue; // must have title to show
+    if (!title) continue;
 
     const typeRaw = firstText(item, NS.z, 'itemType') || localName || '';
     const type = String(typeRaw).toLowerCase();
 
     const authors = readPeopleFromContainer(item, NS.bib, 'authors');
     const editors = readPeopleFromContainer(item, NS.bib, 'editors');
-    // translators live under z:translators
     const translators = readPeopleFromContainer(item, NS.z, 'translators');
 
     const language = firstText(item, NS.z, 'language') || '';
@@ -183,7 +177,7 @@ function parseRDFItems(xmlDoc) {
     const year = getYearFromDateStr(dateStr);
 
     const url = readURL(item);
-    const doi = null; // not reliably present in this RDF
+    const doi = null;
     const tags = readSubjects(item);
 
     const key = firstText(item, NS.z, 'citationKey') || item.getAttributeNS(NS.rdf, 'about') || item.getAttribute('rdf:about') || null;
@@ -216,7 +210,6 @@ fetch(DATA_URL)
   .then(txt => {
     const parser = new DOMParser();
     const xml = parser.parseFromString(txt, 'application/xml');
-    // Check for parse errors
     const parserError = xml.getElementsByTagName('parsererror')[0];
     if (parserError) throw new Error('Failed to parse RDF');
     RAW = parseRDFItems(xml);
@@ -340,6 +333,7 @@ function applyFilters() {
     if (selLangs.length && !selLangs.includes(it.language)) return false;
     if (selPlaces.length && !selPlaces.includes(it.place)) return false;
     if (selTypes.length && !selTypes.includes(it.type)) return false;
+    // Tags: allow selecting multiple (AND). Change to OR if needed by replacing every -> some
     if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false;
 
     const y = (it.year !== null && it.year !== undefined) ? Number(it.year) : null;
