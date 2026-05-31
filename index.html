@@ -1,187 +1,82 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Bibliography Search</title>
-
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-
-<style>
-
-body{
-    font-family: Arial, sans-serif;
-    margin:40px;
-    background:#f5f5f5;
-    color:#222;
-}
-
-h1{
-    margin-bottom:20px;
-}
-
-.search-box{
-    margin-bottom:30px;
-}
-
-input{
-    width:100%;
-    max-width:500px;
-    padding:12px;
-    font-size:16px;
-    border:1px solid #ccc;
-    border-radius:8px;
-}
-
-ul{
-    list-style:none;
-    padding:0;
-}
-
-li{
-    background:white;
-    padding:20px;
-    margin-bottom:20px;
-    border-radius:10px;
-    box-shadow:0 2px 5px rgba(0,0,0,0.1);
-}
-
-.title{
-    font-size:20px;
-    font-weight:bold;
-    margin-bottom:10px;
-}
-
-.field{
-    margin-bottom:5px;
-}
-
-a{
-    color:blue;
-}
-
-</style>
+<meta charset="utf-8">
+<title>Library</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="styles.css">
 </head>
-
 <body>
-
-<h1>Bibliography Database</h1>
-
-<div class="search-box">
-    <input 
-        type="text" 
-        id="universalSearch" 
-        placeholder="Search bibliography..."
-    >
+<header>
+<h1>Library</h1>
+</header>
+<section id="filters">
+<div class="filter">
+<label>Author</label>
+<select id="f-authors" multiple></select>
 </div>
-
-<ul id="results"></ul>
-
-<script>
-
-let bibEntries = [];
-
-Papa.parse('demo.csv', {
-
-    header: true,
-    download: true,
-    skipEmptyLines: true,
-
-    complete: function(results) {
-
-        bibEntries = results.data;
-
-        displayResults(bibEntries);
-    },
-
-    error: function(err) {
-
-        document.getElementById('results').innerHTML =
-            '<li>Error loading demo.csv</li>';
-
-        console.error(err);
-    }
-});
-
-document
-.getElementById('universalSearch')
-.addEventListener('input', function(e){
-
-    const q = e.target.value.toLowerCase();
-
-    const filtered = bibEntries.filter(entry => {
-
-        return Object.values(entry)
-            .join(' ')
-            .toLowerCase()
-            .includes(q);
-    });
-
-    displayResults(filtered);
-});
-
-function displayResults(entries){
-
-    const results = document.getElementById('results');
-
-    results.innerHTML = '';
-
-    if(entries.length === 0){
-
-        results.innerHTML = '<li>No results found.</li>';
-        return;
-    }
-
-    entries.forEach(entry => {
-
-        const li = document.createElement('li');
-
-        li.innerHTML = `
-
-            <div class="title">
-                ${entry.Title || 'Untitled'}
-            </div>
-
-            <div class="field">
-                <strong>Author:</strong>
-                ${entry.Author || ''}
-            </div>
-
-            <div class="field">
-                <strong>Publisher:</strong>
-                ${entry.Publisher || ''}
-            </div>
-
-            <div class="field">
-                <strong>Year:</strong>
-                ${entry['Publication Year'] || ''}
-            </div>
-
-            <div class="field">
-                <strong>Language:</strong>
-                ${entry.Language || ''}
-            </div>
-
-            ${
-                entry.Url
-                ? `
-                <div class="field">
-                    <strong>URL:</strong>
-                    <a href="${entry.Url}" target="_blank">
-                        ${entry.Url}
-                    </a>
-                </div>
-                `
-                : ''
-            }
-
-        `;
-
-        results.appendChild(li);
-    });
-}
-
-</script>
-
+<div class="filter">
+<label>Editor</label>
+<select id="f-editors" multiple></select>
+</div>
+<div class="filter">
+<label>Translator</label>
+<select id="f-translators" multiple></select>
+</div>
+<div class="filter">
+<label>Language</label>
+<select id="f-language" multiple></select>
+</div>
+<div class="filter">
+<label>Place</label>
+<select id="f-place" multiple></select>
+</div>
+<div class="filter">
+<label>Type</label>
+<select id="f-type" multiple></select>
+</div>
+<div class="filter">
+<label>Tags</label>
+<select id="f-tags" multiple></select>
+</div>
+<div class="filter">
+<label>Year exact</label>
+<input type="number" id="f-year-exact" placeholder="e.g. 2021">
+</div>
+<div class="filter">
+<label>Year range</label>
+<div class="range">
+<input type="number" id="f-year-min" placeholder="min">
+<span>–</span>
+<input type="number" id="f-year-max" placeholder="max">
+</div>
+</div>
+<div class="actions">
+<button id="btn-clear">Clear filters</button>
+</div>
+</section>
+<section id="stats">
+<span id="count">0</span> items
+</section>
+<section id="results"></section>
+<script src="app.js"></script>
 </body>
 </html>
+styles.css
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #222; }
+header { background:#f4f4f4; padding:12px 16px; border-bottom:1px solid #e5e5e5; }
+h1 { margin:0; font-size:20px; }
+#filters { display:flex; flex-wrap:wrap; gap:12px; padding:12px 16px; border-bottom:1px solid #eee; }
+.filter { display:flex; flex-direction:column; gap:6px; min-width:200px; }
+.filter select, .filter input { padding:6px; }
+.filter .range { display:flex; align-items:center; gap:6px; }
+.actions { display:flex; align-items:flex-end; }
+#stats { padding:8px 16px; font-size:14px; color:#555; }
+#results { padding:12px 16px; display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+.card { border:1px solid #eee; border-radius:6px; padding:12px; background:#fff; }
+.title { font-weight:600; margin-bottom:6px; }
+.meta { font-size:13px; color:#555; margin:2px 0; }
+.badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.badge { font-size:12px; padding:2px 6px; background:#f0f6ff; border:1px solid #d0e3ff; border-radius:999px; }
+a { color:#0645ad; text-decoration:none; }
+a:hover { text-decoration:underline; }
