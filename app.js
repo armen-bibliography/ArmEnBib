@@ -30,6 +30,13 @@ function getTags(it) {
 function getPlace(it) {
   return it['publisher-place'] || it['event-place'] || it['jurisdiction'] || it['original-publisher-place'] || null;
 }
+// Accent/case-insensitive folding
+function fold(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
 
 let RAW = [];
 let VIEW = []; // normalized for filtering only (not saved)
@@ -97,23 +104,24 @@ function getSearch(id) {
   return el ? el.value : '';
 }
 
+// Populate a <select> based on a query; show only values that START WITH the query (case/diacritic-insensitive)
 function filterAndFill(selectId, allValues, query) {
   const el = document.getElementById(selectId);
-  const prev = Array.from(el.selectedOptions).map(o => o.value);
-  const q = (query || '').toLowerCase();
-  const vals = allValues.filter(v => (v && v.toLowerCase().includes(q)) || prev.includes(v));
+  const prevSelected = new Set(Array.from(el.selectedOptions).map(o => o.value));
+  const q = fold(query || '');
+  const vals = q === '' ? allValues : allValues.filter(v => fold(v).startsWith(q));
   el.innerHTML = '';
   vals.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v;
     opt.textContent = v;
-    if (prev.includes(v)) opt.selected = true;
+    if (prevSelected.has(v)) opt.selected = true; // keep selection if still visible
     el.appendChild(opt);
   });
 }
 
 function bindEvents() {
-  // Filter option lists by search boxes
+  // Filter option lists as the user types (live)
   const searchMap = [
     ['s-authors','f-authors','authors'],
     ['s-editors','f-editors','editors'],
@@ -128,9 +136,10 @@ function bindEvents() {
     if (sEl) sEl.addEventListener('input', () => filterAndFill(fId, OPTIONS[key], sEl.value));
   });
 
-  // Apply item filters when selections or numbers change
+  // Apply item filters when selections or year inputs change
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-year-exact','f-year-min','f-year-max']
     .forEach(id => document.getElementById(id).addEventListener('input', applyFilters));
+
   document.getElementById('btn-clear').addEventListener('click', clearFilters);
 }
 
