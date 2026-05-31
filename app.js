@@ -207,7 +207,7 @@ function parseRDFItems(xmlDoc) {
 // Load data and initialize
 fetch(DATA_URL)
   .then(r => {
-    if (!r.ok) throw new Error('Failed to fetch data: ' + r.status);
+    if (!r.ok) throw new Error('Failed to fetch data: ' + r.status + ' ' + r.url);
     return r.text();
   })
   .then(txt => {
@@ -234,7 +234,7 @@ fetch(DATA_URL)
     buildFilters(VIEW);
     render(VIEW);
     bindEvents();
-    // Map init is deferred until user shows it the first time
+    // Map will be initialized on first Show map click
   })
   .catch(err => {
     document.getElementById('results').innerHTML = '<div class="card">Error: ' + (err && err.message ? err.message : err) + '</div>';
@@ -359,7 +359,25 @@ function bindEvents() {
   // Toggle map show/hide
   const btnMap = document.getElementById('btn-toggle-map');
   if (btnMap) {
-   btnMap.addEventListener('click', () => { const panel = document.getElementById('map-panel'); const isHidden = panel.hasAttribute('hidden'); if (isHidden) { panel.removeAttribute('hidden'); btnMap.textContent = 'Hide map'; // Defer init/resize until the panel is visible in layout requestAnimationFrame(() => { ensureMap(); // Give the browser one frame to lay out the newly visible panel setTimeout(() => { if (map) { map.invalidateSize(); } updateMap(currentFilteredItems()); // Optional: scroll into view panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); }); } else { panel.setAttribute('hidden', ''); btnMap.textContent = 'Show map'; } });
+    btnMap.addEventListener('click', () => {
+      const panel = document.getElementById('map-panel');
+      const isHidden = panel.hasAttribute('hidden');
+      if (isHidden) {
+        panel.removeAttribute('hidden');
+        btnMap.textContent = 'Hide map';
+        // Defer init/resize until panel is visible in layout
+        requestAnimationFrame(() => {
+          ensureMap();
+          setTimeout(() => {
+            if (map) map.invalidateSize();
+            updateMap(currentFilteredItems());
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 50);
+        });
+      } else {
+        panel.setAttribute('hidden', '');
+        btnMap.textContent = 'Show map';
+      }
     });
   }
 
@@ -514,7 +532,9 @@ function render(items) {
 /* ========= Map (Leaflet) ========= */
 let map, markersLayer;
 
-function initMap() { const mapEl = document.getElementById('map'); if (!mapEl) return; map = L.map('map', { scrollWheelZoom: true }); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map); markersLayer = L.layerGroup().addTo(map); map.setView([40.3, 45.3], 6); }
+function ensureMap() {
+  if (map) return;
+  initMap();
 }
 function initMap() {
   const mapEl = document.getElementById('map');
@@ -526,4 +546,70 @@ function initMap() {
   markersLayer = L.layerGroup().addTo(map);
   map.setView([40.3, 45.3], 6);
 }
-function mapVisible()
+function mapVisible() {
+  const panel = document.getElementById('map-panel');
+  return panel && !panel.hasAttribute('hidden');
+}
+
+function updateMap(items) {
+  if (!map || !markersLayer) return;
+  markersLayer.clearLayers();
+
+  // Aggregate by canonical place
+  const byPlace = new Map();
+  items.forEach(it => {
+    if (!it.place) return;
+    const canon = canonicalPlace(it.place);
+    if (!canon) return;
+    if (!byPlace.has(canon)) byPlace.set(canon, { label: canon, items: [] });
+    byPlace.get(canon).items.push(it);
+  });
+
+  const bounds = [];
+  const promises = [];
+
+  byPlace.forEach((obj, place) => {
+    const p = geocode(place).then(coord => {
+      if (!coord) return;
+      const count = obj.items.length;
+      const sample = obj.items.slice(0, 6).map(x => `• ${escapeHTML(x.title)}`).join('<br>');
+      const popup = `<strong>${escapeHTML(place)}</strong><br>${count} item(s)<br>${sample}${obj.items.length>6?'<br>…':''}`;
+      const marker = L.marker([coord.lat, coord.lon]).bindPopup(popup);
+      markersLayer.addLayer(marker);
+      bounds.push([coord.lat, coord.lon]);
+    }).catch(() => {});
+    promises.push(p);
+  });
+
+  Promise.all(promises).then(() => {
+    if (bounds.length) {
+      map.fitBounds(bounds, { padding: [20, 20] });
+      setTimeout(() => map.invalidateSize(), 50);
+    }
+  });
+}
+
+function geocode(place) {
+  const key = 'geo:' + place.toLowerCase();
+  const cached = localStorage.getItem(key);
+  if (cached) {
+    try {
+      const obj = JSON.parse(cached);
+      if (obj && typeof obj.lat === 'number' && typeof obj.lon === 'number') {
+        return Promise.resolve(obj);
+      }
+    } catch (_) {}
+  }
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(place);
+  return fetch(url, { headers: { 'Accept': 'application/json' }})
+    .then(r => r.json())
+    .then(arr => {
+      if (Array.isArray(arr) && arr[0]) {
+        const coord = { lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
+        localStorage.setItem(key, JSON.stringify(coord));
+        return coord;
+      }
+      return null;
+    })
+    .catch(() => null);
+}
