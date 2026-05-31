@@ -359,19 +359,7 @@ function bindEvents() {
   // Toggle map show/hide
   const btnMap = document.getElementById('btn-toggle-map');
   if (btnMap) {
-    btnMap.addEventListener('click', () => {
-      const panel = document.getElementById('map-panel');
-      const isHidden = panel.hasAttribute('hidden');
-      if (isHidden) {
-        panel.removeAttribute('hidden');
-        btnMap.textContent = 'Hide map';
-        ensureMap();
-        updateMap(currentFilteredItems());
-        setTimeout(() => { if (map) map.invalidateSize(); }, 50);
-      } else {
-        panel.setAttribute('hidden', '');
-        btnMap.textContent = 'Show map';
-      }
+   btnMap.addEventListener('click', () => { const panel = document.getElementById('map-panel'); const isHidden = panel.hasAttribute('hidden'); if (isHidden) { panel.removeAttribute('hidden'); btnMap.textContent = 'Hide map'; // Defer init/resize until the panel is visible in layout requestAnimationFrame(() => { ensureMap(); // Give the browser one frame to lay out the newly visible panel setTimeout(() => { if (map) { map.invalidateSize(); } updateMap(currentFilteredItems()); // Optional: scroll into view panel.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 50); }); } else { panel.setAttribute('hidden', ''); btnMap.textContent = 'Show map'; } });
     });
   }
 
