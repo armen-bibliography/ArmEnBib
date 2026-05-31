@@ -109,7 +109,7 @@ function readPeopleFromContainer(node, containerNS, containerLocal) {
   return uniqueSorted(out);
 }
 function readSubjects(node) {
-  // Only direct dc:subject children (avoid subjects inside nested isPartOf)
+  // Only direct dc:subject children
   const subs = Array.from(node.childNodes)
     .filter(n => n.nodeType === 1 && n.namespaceURI === NS.dc && n.localName === 'subject')
     .map(el => el.textContent.trim())
@@ -117,7 +117,6 @@ function readSubjects(node) {
   return uniqueSorted(subs);
 }
 function readPlace(node) {
-  // publisher -> foaf:Organization -> vcard:adr -> vcard:Address -> vcard:locality
   const pub = firstEl(node, NS.dc, 'publisher');
   if (!pub) return null;
   const org = firstEl(pub, NS.foaf, 'Organization');
@@ -303,10 +302,65 @@ function bindEvents() {
     if (sEl) sEl.addEventListener('input', () => filterAndFill(fId, OPTIONS[key], sEl.value, key));
   });
 
+  // Apply filters when selections or year inputs change
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-year-exact','f-year-min','f-year-max']
     .forEach(id => document.getElementById(id).addEventListener('input', applyFilters));
 
+  // Enable click-to-toggle behavior for all multi-selects (no Ctrl needed), and allow unselect on second click
+  ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags'].forEach(enableToggleMulti);
+
+  // Clickable chips in results to toggle filters
+  document.getElementById('results').addEventListener('click', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const key = t.getAttribute('data-filter');
+    const val = t.getAttribute('data-value');
+    if (!key || !val) return;
+    const map = {
+      authors: 'f-authors',
+      editors: 'f-editors',
+      translators: 'f-translators',
+      language: 'f-language',
+      place: 'f-place',
+      type: 'f-type',
+      tags: 'f-tags'
+    };
+    const selId = map[key];
+    if (!selId) return;
+    toggleSelectValue(selId, val); // toggles selection
+    applyFilters();
+  });
+
   document.getElementById('btn-clear').addEventListener('click', clearFilters);
+}
+
+// Toggle selection on mousedown so no Ctrl is required; clicking again unselects
+function enableToggleMulti(id) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  sel.addEventListener('mousedown', (e) => {
+    if (e.target && e.target.tagName === 'OPTION') {
+      e.preventDefault();
+      const opt = e.target;
+      opt.selected = !opt.selected;
+      sel.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+  });
+}
+
+// Programmatically toggle a value in a multi-select
+function toggleSelectValue(selectId, value) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  // ensure option exists; if not, add it temporarily
+  let opt = Array.from(sel.options).find(o => o.value === value);
+  if (!opt) {
+    opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    sel.appendChild(opt);
+  }
+  opt.selected = !opt.selected;
 }
 
 function getMultiSelectValues(id) {
@@ -333,7 +387,7 @@ function applyFilters() {
     if (selLangs.length && !selLangs.includes(it.language)) return false;
     if (selPlaces.length && !selPlaces.includes(it.place)) return false;
     if (selTypes.length && !selTypes.includes(it.type)) return false;
-    // Tags: allow selecting multiple (AND). Change to OR if needed by replacing every -> some
+    // Tags: AND logic for all selected tags
     if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false;
 
     const y = (it.year !== null && it.year !== undefined) ? Number(it.year) : null;
@@ -364,6 +418,11 @@ function clearFilters() {
   render(VIEW);
 }
 
+function chips(values, key) {
+  if (!values || !values.length) return '';
+  return values.map(v => `<span class="filter-chip" data-filter="${key}" data-value="${escapeAttr(v)}">${escapeHTML(v)}</span>`).join(' ');
+}
+
 function render(items) {
   const container = document.getElementById('results');
   const count = document.getElementById('count');
@@ -376,17 +435,21 @@ function render(items) {
 
   const html = items.map(it => {
     const hTitle = it.title ? `<div class="title">${escapeHTML(it.title)}</div>` : '';
-    const hMeta = [
-      it.authors.length ? `Authors: ${it.authors.join('; ')}` : '',
-      it.editors.length ? `Editors: ${it.editors.join('; ')}` : '',
-      it.translators.length ? `Translators: ${it.translators.join('; ')}` : '',
-      it.type ? `Type: ${it.type}` : '',
-      it.language ? `Language: ${it.language}` : '',
-      it.place ? `Place: ${it.place}` : '',
-      (it.year !== null && it.year !== undefined) ? `Year: ${it.year}` : ''
-    ].filter(Boolean).map(x => `<div class="meta">${escapeHTML(x)}</div>`).join('');
 
-    const badges = (it.tags || []).map(t => `<span class="badge">${escapeHTML(t)}</span>`).join('');
+    // Build clickable chips for people and fields
+    const authorsLine = it.authors.length ? `Authors: ${chips(it.authors, 'authors')}` : '';
+    const editorsLine = it.editors.length ? `Editors: ${chips(it.editors, 'editors')}` : '';
+    const translatorsLine = it.translators.length ? `Translators: ${chips(it.translators, 'translators')}` : '';
+    const typeLine = it.type ? `Type: ${chips([it.type], 'type')}` : '';
+    const langLine = it.language ? `Language: ${chips([it.language], 'language')}` : '';
+    const placeLine = it.place ? `Place: ${chips([it.place], 'place')}` : '';
+    const yearLine = (it.year !== null && it.year !== undefined) ? `Year: ${escapeHTML(String(it.year))}` : '';
+
+    const hMeta = [authorsLine, editorsLine, translatorsLine, typeLine, langLine, placeLine, yearLine]
+      .filter(Boolean)
+      .map(x => `<div class="meta">${x}</div>`).join('');
+
+    const badges = (it.tags || []).map(t => `<span class="badge filter-chip" data-filter="tags" data-value="${escapeAttr(t)}">${escapeHTML(t)}</span>`).join('');
 
     const links = [
       it.url ? `<a href="${escapeAttr(it.url)}" target="_blank" rel="noopener">Link</a>` : ''
