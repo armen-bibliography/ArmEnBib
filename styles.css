@@ -1,1 +1,21 @@
-
+body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #222; }
+header { background:#f4f4f4; padding:12px 16px; border-bottom:1px solid #e5e5e5; }
+h1 { margin:0; font-size:20px; }
+#filters { display:flex; flex-wrap:wrap; gap:12px; padding:12px 16px; border-bottom:1px solid #eee; }
+.filter { display:flex; flex-direction:column; gap:6px; min-width:200px; }
+.filter label { font-size:12px; color:#555; }
+.filter select, .filter input { padding:6px; border:1px solid #ddd; border-radius:4px; background:#fff; }
+.filter select[multiple] { min-height:120px; }
+.filter .range { display:flex; align-items:center; gap:6px; }
+.actions { display:flex; align-items:flex-end; }
+button { padding:8px 10px; border:1px solid #ccc; background:#fafafa; border-radius:4px; cursor:pointer; }
+button:hover { background:#f0f0f0; }
+#stats { padding:8px 16px; font-size:14px; color:#555; border-bottom:1px solid #eee; }
+#results { padding:12px 16px; display:grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap:12px; }
+.card { border:1px solid #eee; border-radius:6px; padding:12px; background:#fff; box-shadow: 0 1px 0 rgba(0,0,0,0.02); }
+.title { font-weight:600; margin-bottom:6px; }
+.meta { font-size:13px; color:#555; margin:2px 0; }
+.badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
+.badge { font-size:12px; padding:2px 6px; background:#f0f6ff; border:1px solid #d0e3ff; border-radius:999px; }
+a { color:#0645ad; text-decoration:none; }
+a:hover { text-decoration:underline; }
