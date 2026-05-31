@@ -1,5 +1,5 @@
 // Load the RDF instead of JSON
-const DATA_URL = 'Exported Items.rdf';
+const DATA_URL = 'Exported Items.json';
 
 // Helpers
 function nameStr(p) {
