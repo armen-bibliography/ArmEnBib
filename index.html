@@ -4,14 +4,21 @@
   <meta charset="utf-8">
   <title>Library</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="styles.css?v=3">
+  <link rel="stylesheet" href="styles.css?v=4">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
 </head>
 <body>
   <header>
-    <img id="hero" src="Armen.jpeg" alt="Header image">
-    
+    <img id="hero" src="armen.jpeg" alt="Header image">
+    <h1>Library</h1>
   </header>
+
+  <section id="site-titles">
+    <div class="title-en-1">Armenian Studies Bibliography</div>
+    <div class="title-en-2">ArmEn Project</div>
+    <div class="title-hy-1">Հայագիտական մատենագիտություն</div>
+    <div class="title-hy-2">ArmEn նախագիծ</div>
+  </section>
 
   <section id="filters">
     <div class="filter">
@@ -77,9 +84,11 @@
     <div id="map"></div>
   </section>
 
+  <section id="active-filters" hidden></section>
+
   <section id="results"></section>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-  <script src="app.js?v=3"></script>
+  <script src="app.js?v=4"></script>
 </body>
 </html>
