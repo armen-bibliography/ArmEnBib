@@ -309,4 +309,263 @@ function buildFilters(items) {
   filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'), 'translators');
   filterAndFill('f-language', OPTIONS.languages, getSearch('s-language'), 'languages');
   filterAndFill('f-place', OPTIONS.places, getSearch('s-place'), 'places');
-  filterAndFill('f-type', OPTIONS.types, getSearch('
+  filterAndFill('f-type', OPTIONS.types, getSearch('... 'f-type', OPTIONS.types, getSearch('s-type'), 'types');
+  filterAndFill('f-tags', OPTIONS.tags, getSearch('s-tags'), 'tags');
+  filterAndFill('f-publication', OPTIONS.publications, getSearch('s-publication'), 'publications');
+  filterAndFill('f-publisher', OPTIONS.publishers, getSearch('s-publisher'), 'publishers');
+}
+
+/* Build option sets from items */
+function computeOptionSets(items) {
+  return {
+    authors: uniqueSorted(items.flatMap(x => x.authors)),
+    editors: uniqueSorted(items.flatMap(x => x.editors)),
+    translators: uniqueSorted(items.flatMap(x => x.translators)),
+    languages: uniqueSorted(items.map(x => x.language)),
+    places: uniqueSorted(items.map(x => x.place).filter(Boolean)),
+    types: uniqueSorted(items.map(x => x.type)),
+    tags: uniqueSorted(items.flatMap(x => x.tags)),
+    publishers: uniqueSorted(items.map(x => x.publisherName).filter(Boolean)),
+    publications: uniqueSorted(items.map(x => x.containerTitle).filter(Boolean))
+  };
+}
+
+/* ========= Events ========= */
+function bindEvents() {
+  const searchMap = [
+    ['s-authors','f-authors','authors'],
+    ['s-editors','f-editors','editors'],
+    ['s-translators','f-translators','translators'],
+    ['s-language','f-language','languages'],
+    ['s-place','f-place','places'],
+    ['s-type','f-type','types'],
+    ['s-tags','f-tags','tags'],
+    ['s-publication','f-publication','publications'],
+    ['s-publisher','f-publisher','publishers']
+  ];
+  searchMap.forEach(([sId, fId, key]) => {
+    const sEl = document.getElementById(sId);
+    if (sEl) sEl.addEventListener('input', () => {
+      const currentItems = currentFilteredItems();
+      const sets = computeOptionSets(currentItems);
+      const allowed = sets[{authors:'authors',editors:'editors',translators:'translators',languages:'languages',places:'places',types:'types',tags:'tags',publications:'publications',publishers:'publishers'}[key]];
+      filterAndFill(fId, allowed, sEl.value, key);
+    });
+  });
+
+  // Apply filters on change
+  ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-publication','f-publisher','f-year-exact','f-year-min','f-year-max']
+    .forEach(id => document.getElementById(id).addEventListener('input', applyFilters));
+
+  // Enable click-to-toggle for all multi-selects
+  ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-publication','f-publisher'].forEach(enableToggleMulti);
+
+  // Clickable chips in results (including publisher/publication)
+  document.getElementById('results').addEventListener('click', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    const key = t.getAttribute('data-filter');
+    const val = t.getAttribute('data-value');
+    if (!key || !val) return;
+    const map = {
+      authors: 'f-authors',
+      editors: 'f-editors',
+      translators: 'f-translators',
+      language: 'f-language',
+      place: 'f-place',
+      type: 'f-type',
+      tags: 'f-tags',
+      publication: 'f-publication',
+      publisher: 'f-publisher',
+      year: 'f-year-exact'
+    };
+    const selId = map[key];
+    if (!selId) return;
+    if (selId === 'f-year-exact') {
+      const yEl = document.getElementById('f-year-exact');
+      yEl.value = (yEl.value === String(val)) ? '' : String(val);
+    } else {
+      toggleSelectValue(selId, val);
+    }
+    applyFilters();
+  });
+
+  // Toggle map
+  const btnMap = document.getElementById('btn-toggle-map');
+  if (btnMap) {
+    btnMap.addEventListener('click', () => {
+      const panel = document.getElementById('map-panel');
+      const isHidden = panel.hasAttribute('hidden');
+      if (isHidden) {
+        panel.removeAttribute('hidden');
+        btnMap.textContent = 'Hide map';
+        requestAnimationFrame(() => {
+          ensureMap();
+          setTimeout(() => {
+            if (map) map.invalidateSize();
+            updateMap(currentFilteredItems());
+            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 50);
+        });
+      } else {
+        panel.setAttribute('hidden', '');
+        btnMap.textContent = 'Show map';
+      }
+    });
+  }
+
+  document.getElementById('btn-clear').addEventListener('click', clearFilters);
+
+  // Active filters bar clicks (remove chip / clear all)
+  document.getElementById('active-filters').addEventListener('click', (e) => {
+    const t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.classList.contains('x')) {
+      const chip = t.closest('.active-chip');
+      if (!chip) return;
+      const fkey = chip.getAttribute('data-filter');
+      const fval = chip.getAttribute('data-value');
+      removeFilterChip(fkey, fval);
+    } else if (t.id === 'af-clear-all' || t.classList.contains('clear-all')) {
+      clearFilters();
+    }
+  });
+}
+
+/* Toggle multi-select option on click */
+function enableToggleMulti(id) {
+  const sel = document.getElementById(id);
+  if (!sel) return;
+  sel.addEventListener('mousedown', (e) => {
+    if (e.target && e.target.tagName === 'OPTION') {
+      e.preventDefault();
+      const opt = e.target;
+      opt.selected = !opt.selected;
+      sel.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+  });
+}
+function toggleSelectValue(selectId, value) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  let opt = Array.from(sel.options).find(o => o.value === value);
+  if (!opt) {
+    opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = value;
+    sel.appendChild(opt);
+  }
+  opt.selected = !opt.selected;
+}
+function getMultiSelectValues(id) {
+  const sel = document.getElementById(id);
+  return Array.from(sel.selectedOptions).map(o => o.value);
+}
+
+/* ========= Compute filtered items ========= */
+function currentFilteredItems() {
+  const selAuthors = getMultiSelectValues('f-authors');
+  const selEditors = getMultiSelectValues('f-editors');
+  const selTranslators = getMultiSelectValues('f-translators');
+  const selLangs = getMultiSelectValues('f-language');
+  const selPlaces = getMultiSelectValues('f-place');
+  const selTypes = getMultiSelectValues('f-type');
+  const selTags = getMultiSelectValues('f-tags');
+  const selPublications = getMultiSelectValues('f-publication');
+  const selPublishers = getMultiSelectValues('f-publisher');
+
+  const yearExact = document.getElementById('f-year-exact').value.trim();
+  const yearMin = document.getElementById('f-year-min').value.trim();
+  const yearMax = document.getElementById('f-year-max').value.trim();
+
+  return VIEW.filter(it => {
+    if (selAuthors.length && !selAuthors.some(v => it.authors.includes(v))) return false;
+    if (selEditors.length && !selEditors.some(v => it.editors.includes(v))) return false;
+    if (selTranslators.length && !selTranslators.some(v => it.translators.includes(v))) return false;
+    if (selLangs.length && !selLangs.includes(it.language)) return false;
+    if (selPlaces.length && !selPlaces.includes(it.place)) return false;
+    if (selTypes.length && !selTypes.includes(it.type)) return false;
+    if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false;
+    if (selPublications.length && !selPublications.includes(it.containerTitle)) return false;
+    if (selPublishers.length && !selPublishers.includes(it.publisherName)) return false;
+
+    const y = (it.year !== null && it.year !== undefined) ? Number(it.year) : null;
+    if (yearExact !== '') {
+      if (y === null || y !== Number(yearExact)) return false;
+    } else {
+      if (yearMin !== '' && (y === null || y < Number(yearMin))) return false;
+      if (yearMax !== '' && (y === null || y > Number(yearMax))) return false;
+    }
+    return true;
+  });
+}
+
+/* ========= Apply/Clear filters ========= */
+function applyFilters() {
+  const filtered = currentFilteredItems();
+
+  const sets = computeOptionSets(filtered);
+  filterAndFill('f-authors', sets.authors, getSearch('s-authors'), 'authors');
+  filterAndFill('f-editors', sets.editors, getSearch('s-editors'), 'editors');
+  filterAndFill('f-translators', sets.translators, getSearch('s-translators'), 'translators');
+  filterAndFill('f-language', sets.languages, getSearch('s-language'), 'languages');
+  filterAndFill('f-place', sets.places, getSearch('s-place'), 'places');
+  filterAndFill('f-type', sets.types, getSearch('s-type'), 'types');
+  filterAndFill('f-tags', sets.tags, getSearch('s-tags'), 'tags');
+  filterAndFill('f-publication', sets.publications, getSearch('s-publication'), 'publications');
+  filterAndFill('f-publisher', sets.publishers, getSearch('s-publisher'), 'publishers');
+
+  render(filtered);
+  renderActiveFilters();
+  if (mapVisible()) updateMap(filtered);
+}
+
+function clearFilters() {
+  ['s-authors','s-editors','s-translators','s-language','s-place','s-type','s-tags','s-publication','s-publisher'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-publication','f-publisher'].forEach(id => {
+    const el = document.getElementById(id);
+    Array.from(el.options).forEach(o => o.selected = false);
+  });
+  ['f-year-exact','f-year-min','f-year-max'].forEach(id => document.getElementById(id).value = '');
+  buildFilters(VIEW);
+  render(VIEW);
+  renderActiveFilters();
+  if (mapVisible()) updateMap(VIEW);
+}
+
+/* ========= Rendering ========= */
+function chips(values, key) {
+  if (!values || !values.length) return '';
+  return values.map(v => `<span class="filter-chip" data-filter="${key}" data-value="${escapeAttr(v)}">${escapeHTML(v)}</span>`).join(' ');
+}
+
+function render(items) {
+  const container = document.getElementById('results');
+  const count = document.getElementById('count');
+  count.textContent = items.length.toString();
+
+  if (!items.length) {
+    container.innerHTML = '<div class="card">No items match your filters.</div>';
+    return;
+  }
+
+  const html = items.map(it => {
+    const hTitle = it.title ? `<div class="title">${escapeHTML(it.title)}</div>` : '';
+
+    const authorsLine = it.authors.length ? `Authors: ${chips(it.authors, 'authors')}` : '';
+    const editorsLine = it.editors.length ? `Editors: ${chips(it.editors, 'editors')}` : '';
+    const translatorsLine = it.translators.length ? `Translators: ${chips(it.translators, 'translators')}` : '';
+    const typeLine = it.type ? `Type: ${chips([it.type], 'type')}` : '';
+    const langLine = it.language ? `Language: ${chips([it.language], 'language')}` : '';
+    const placeLine = it.place ? `Place: ${chips([it.place], 'place')}` : '';
+    const yearLine = (it.year !== null && it.year !== undefined) ? `Year: ${chips([String(it.year)], 'year')}` : '';
+
+    const pubNameLine = it.publisherName ? `Publisher: ${chips([it.publisherName], 'publisher')}` : '';
+    const containerLine = it.containerTitle ? `Publication: ${chips([it.containerTitle], 'publication')}` : '';
+    const pagesLine = it.pages ? `Pages: ${escapeHTML(it.pages)}` : '';
+    const catalogLine = it.libraryCatalog ? `Library catalog: ${escapeHTML(it.libraryCatalog)}` : '';
+
+    const hMeta = [authorsLine, editorsLine, translatorsLine, typeLine, langLine
