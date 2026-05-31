@@ -8,7 +8,7 @@ h1 { margin:0; font-size:20px; }
 /* Filters: responsive from the start using CSS Grid */
 #filters {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); /* fill row, wrap without overflow */
+  grid-template-columns: repeat(4, minmax(220px, 1fr)); /* fill row, wrap without overflow */
   gap:12px;
   padding:12px 16px;
   border-bottom:1px solid #eee;
