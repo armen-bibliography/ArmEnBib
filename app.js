@@ -1,7 +1,7 @@
-// Load the RDF instead of JSON
+// Load the RDF
 const DATA_URL = 'Exported Items.rdf';
 
-// Helpers
+/* ================= Helpers ================= */
 function nameStr(p) {
   if (!p || typeof p !== 'object') return '';
   const fam = p.family || '';
@@ -50,7 +50,15 @@ function canonicalPlace(s) {
   const m = s.match(/\[([^\]]+)\]/);
   return (m ? m[1] : s).trim();
 }
+function hasArmenian(str) {
+  return /[\u0531-\u058A]/.test(String(str || ''));
+}
+function isArmenianLanguage(lang) {
+  const s = String(lang || '');
+  return /armenian/i.test(s) || /\bhy\b/i.test(s);
+}
 
+/* ================= State ================= */
 let RAW = [];
 let VIEW = [];
 let OPTIONS = {
@@ -71,8 +79,13 @@ let TOKENS = {
   types: new Map(),
   tags: new Map()
 };
+// Extra (UI-less) filters
+const EXTRA_FILTERS = {
+  publication: new Set(), // matches item.publicationTitle
+  publisher: new Set()    // matches item.publisherName
+};
 
-// Namespaces
+/* ================= RDF parsing ================= */
 const NS = {
   rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
   z: 'http://www.zotero.org/namespaces/export#',
@@ -83,7 +96,6 @@ const NS = {
   vcard: 'http://nwalsh.com/rdf/vCard#',
   prism: 'http://prismstandard.org/namespaces/1.2/basic/'
 };
-
 function firstEl(node, ns, local) {
   const list = node.getElementsByTagNameNS(ns, local);
   return list && list.length ? list[0] : null;
@@ -132,6 +144,25 @@ function readPlace(node) {
   const loc = firstEl(addr, NS.vcard, 'locality');
   return loc ? loc.textContent.trim() : null;
 }
+function readPublisherName(node) {
+  const pub = firstEl(node, NS.dc, 'publisher');
+  if (!pub) return null;
+  const org = firstEl(pub, NS.foaf, 'Organization');
+  if (!org) return null;
+  const nm = firstText(org, NS.foaf, 'name');
+  return nm || null;
+}
+function readPublicationTitle(node) {
+  const zPub = firstText(node, NS.z, 'publicationTitle');
+  if (zPub) return zPub;
+  const prismPub = firstText(node, NS.prism, 'publicationName');
+  if (prismPub) return prismPub;
+  return null;
+}
+function readLibraryCatalog(node) {
+  const cat = firstText(node, NS.z, 'libraryCatalog');
+  return cat || null;
+}
 function readURL(node) {
   const about = node.getAttributeNS(NS.rdf, 'about') || node.getAttribute('rdf:about') || '';
   if (about && /^(https?:|urn:)/i.test(about)) return about;
@@ -176,6 +207,10 @@ function parseRDFItems(xmlDoc) {
 
     const language = firstText(item, NS.z, 'language') || '';
     const place = readPlace(item);
+    const publisherName = readPublisherName(item);
+    const publicationTitle = readPublicationTitle(item);
+    const libraryCatalog = readLibraryCatalog(item);
+
     const dateStr = firstText(item, NS.dc, 'date') || '';
     const year = getYearFromDateStr(dateStr);
 
@@ -194,6 +229,9 @@ function parseRDFItems(xmlDoc) {
       translators,
       language,
       place,
+      publisherName,
+      publicationTitle,
+      libraryCatalog,
       year,
       url,
       doi,
@@ -204,17 +242,20 @@ function parseRDFItems(xmlDoc) {
   return out;
 }
 
-// Load data and initialize
+/* ================= Load and init ================= */
 fetch(DATA_URL)
   .then(r => {
     if (!r.ok) throw new Error('Failed to fetch data: ' + r.status + ' ' + r.url);
     return r.text();
   })
   .then(txt => {
+    if (/<!doctype html/i.test(txt) || /<html/i.test(txt)) {
+      throw new Error('Expected RDF XML but got HTML (likely 404). Check DATA_URL/path.');
+    }
     const parser = new DOMParser();
     const xml = parser.parseFromString(txt, 'application/xml');
     const parserError = xml.getElementsByTagName('parsererror')[0];
-    if (parserError) throw new Error('Failed to parse RDF');
+    if (parserError) throw new Error('Failed to parse RDF (is the URL pointing to the right file?)');
     RAW = parseRDFItems(xml);
     VIEW = RAW.map(it => ({
       key: it.key || null,
@@ -225,6 +266,9 @@ fetch(DATA_URL)
       translators: it.translators || [],
       language: it.language || '',
       place: it.place || null,
+      publisherName: it.publisherName || null,
+      publicationTitle: it.publicationTitle || null,
+      libraryCatalog: it.libraryCatalog || null,
       year: it.year !== undefined ? it.year : null,
       url: it.url || null,
       doi: it.doi || null,
@@ -233,14 +277,15 @@ fetch(DATA_URL)
     }));
     buildFilters(VIEW);
     render(VIEW);
+    renderActiveFilters();
     bindEvents();
-    // Map will be initialized on first Show map click
+    // Map will initialize on first Show map
   })
   .catch(err => {
     document.getElementById('results').innerHTML = '<div class="card">Error: ' + (err && err.message ? err.message : err) + '</div>';
   });
 
-// Build full option lists from items
+/* ================= Filters and options ================= */
 function buildFilters(items) {
   const sets = computeOptionSets(items);
   OPTIONS = sets;
@@ -255,361 +300,4 @@ function buildFilters(items) {
 
   filterAndFill('f-authors', OPTIONS.authors, getSearch('s-authors'), 'authors');
   filterAndFill('f-editors', OPTIONS.editors, getSearch('s-editors'), 'editors');
-  filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'), 'translators');
-  filterAndFill('f-language', OPTIONS.languages, getSearch('s-language'), 'languages');
-  filterAndFill('f-place', OPTIONS.places, getSearch('s-place'), 'places');
-  filterAndFill('f-type', OPTIONS.types, getSearch('s-type'), 'types');
-  filterAndFill('f-tags', OPTIONS.tags, getSearch('s-tags'), 'tags');
-}
-function computeOptionSets(items) {
-  return {
-    authors: uniqueSorted(items.flatMap(x => x.authors)),
-    editors: uniqueSorted(items.flatMap(x => x.editors)),
-    translators: uniqueSorted(items.flatMap(x => x.translators)),
-    languages: uniqueSorted(items.map(x => x.language)),
-    places: uniqueSorted(items.map(x => x.place)),
-    types: uniqueSorted(items.map(x => x.type)),
-    tags: uniqueSorted(items.flatMap(x => x.tags))
-  };
-}
-
-function getSearch(id) {
-  const el = document.getElementById(id);
-  return el ? el.value : '';
-}
-
-// Keep selection where still visible; drop those that are not in new options
-function filterAndFill(selectId, allValues, query, key) {
-  const el = document.getElementById(selectId);
-  const prevSelected = new Set(Array.from(el.selectedOptions).map(o => o.value));
-  const q = fold(query || '');
-  const vals = q === ''
-    ? allValues
-    : allValues.filter(v => {
-        const toks = TOKENS[key].get(v) || [];
-        return toks.some(tok => tok.startsWith(q));
-      });
-
-  el.innerHTML = '';
-  vals.forEach(v => {
-    const opt = document.createElement('option');
-    opt.value = v;
-    opt.textContent = v;
-    if (prevSelected.has(v)) opt.selected = true;
-    el.appendChild(opt);
-  });
-}
-
-function bindEvents() {
-  const searchMap = [
-    ['s-authors','f-authors','authors'],
-    ['s-editors','f-editors','editors'],
-    ['s-translators','f-translators','translators'],
-    ['s-language','f-language','languages'],
-    ['s-place','f-place','places'],
-    ['s-type','f-type','types'],
-    ['s-tags','f-tags','tags']
-  ];
-  searchMap.forEach(([sId, fId, key]) => {
-    const sEl = document.getElementById(sId);
-    if (sEl) sEl.addEventListener('input', () => {
-      const currentItems = currentFilteredItems();
-      const sets = computeOptionSets(currentItems);
-      const allowed = sets[{authors:'authors',editors:'editors',translators:'translators',languages:'languages',places:'places',types:'types',tags:'tags'}[key]];
-      filterAndFill(fId, allowed, sEl.value, key);
-    });
-  });
-
-  // Apply filters when selections or year inputs change
-  ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-year-exact','f-year-min','f-year-max']
-    .forEach(id => document.getElementById(id).addEventListener('input', applyFilters));
-
-  // Enable click-to-toggle behavior for all multi-selects (no Ctrl needed), and allow unselect on second click
-  ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags'].forEach(enableToggleMulti);
-
-  // Clickable chips in results to toggle filters (authors, editors, translators, type, language, place, year, tags)
-  document.getElementById('results').addEventListener('click', (e) => {
-    const t = e.target;
-    if (!(t instanceof Element)) return;
-    const key = t.getAttribute('data-filter');
-    const val = t.getAttribute('data-value');
-    if (!key || !val) return;
-    const map = {
-      authors: 'f-authors',
-      editors: 'f-editors',
-      translators: 'f-translators',
-      language: 'f-language',
-      place: 'f-place',
-      type: 'f-type',
-      tags: 'f-tags',
-      year: 'f-year-exact'
-    };
-    const selId = map[key];
-    if (!selId) return;
-    if (selId === 'f-year-exact') {
-      const yEl = document.getElementById('f-year-exact');
-      if (yEl.value === String(val)) yEl.value = '';
-      else yEl.value = String(val);
-    } else {
-      toggleSelectValue(selId, val);
-    }
-    applyFilters();
-  });
-
-  // Toggle map show/hide
-  const btnMap = document.getElementById('btn-toggle-map');
-  if (btnMap) {
-    btnMap.addEventListener('click', () => {
-      const panel = document.getElementById('map-panel');
-      const isHidden = panel.hasAttribute('hidden');
-      if (isHidden) {
-        panel.removeAttribute('hidden');
-        btnMap.textContent = 'Hide map';
-        // Defer init/resize until panel is visible in layout
-        requestAnimationFrame(() => {
-          ensureMap();
-          setTimeout(() => {
-            if (map) map.invalidateSize();
-            updateMap(currentFilteredItems());
-            panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }, 50);
-        });
-      } else {
-        panel.setAttribute('hidden', '');
-        btnMap.textContent = 'Show map';
-      }
-    });
-  }
-
-  document.getElementById('btn-clear').addEventListener('click', clearFilters);
-}
-
-// Toggle selection on mousedown so no Ctrl is required; clicking again unselects
-function enableToggleMulti(id) {
-  const sel = document.getElementById(id);
-  if (!sel) return;
-  sel.addEventListener('mousedown', (e) => {
-    if (e.target && e.target.tagName === 'OPTION') {
-      e.preventDefault();
-      const opt = e.target;
-      opt.selected = !opt.selected;
-      sel.dispatchEvent(new Event('input', {bubbles: true}));
-    }
-  });
-}
-
-// Programmatically toggle a value in a multi-select
-function toggleSelectValue(selectId, value) {
-  const sel = document.getElementById(selectId);
-  if (!sel) return;
-  let opt = Array.from(sel.options).find(o => o.value === value);
-  if (!opt) {
-    opt = document.createElement('option');
-    opt.value = value;
-    opt.textContent = value;
-    sel.appendChild(opt);
-  }
-  opt.selected = !opt.selected;
-}
-
-function getMultiSelectValues(id) {
-  const sel = document.getElementById(id);
-  return Array.from(sel.selectedOptions).map(o => o.value);
-}
-
-// Compute filtered items based on current selections
-function currentFilteredItems() {
-  const selAuthors = getMultiSelectValues('f-authors');
-  const selEditors = getMultiSelectValues('f-editors');
-  const selTranslators = getMultiSelectValues('f-translators');
-  const selLangs = getMultiSelectValues('f-language');
-  const selPlaces = getMultiSelectValues('f-place');
-  const selTypes = getMultiSelectValues('f-type');
-  const selTags = getMultiSelectValues('f-tags');
-  const yearExact = document.getElementById('f-year-exact').value.trim();
-  const yearMin = document.getElementById('f-year-min').value.trim();
-  const yearMax = document.getElementById('f-year-max').value.trim();
-
-  return VIEW.filter(it => {
-    if (selAuthors.length && !selAuthors.some(v => it.authors.includes(v))) return false;
-    if (selEditors.length && !selEditors.some(v => it.editors.includes(v))) return false;
-    if (selTranslators.length && !selTranslators.some(v => it.translators.includes(v))) return false;
-    if (selLangs.length && !selLangs.includes(it.language)) return false;
-    if (selPlaces.length && !selPlaces.includes(it.place)) return false;
-    if (selTypes.length && !selTypes.includes(it.type)) return false;
-    if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false;
-
-    const y = (it.year !== null && it.year !== undefined) ? Number(it.year) : null;
-    if (yearExact !== '') {
-      if (y === null || y !== Number(yearExact)) return false;
-    } else {
-      if (yearMin !== '' && (y === null || y < Number(yearMin))) return false;
-      if (yearMax !== '' && (y === null || y > Number(yearMax))) return false;
-    }
-    return true;
-  });
-}
-
-function applyFilters() {
-  const filtered = currentFilteredItems();
-
-  // Update dependent option lists based on the currently filtered items
-  const sets = computeOptionSets(filtered);
-  filterAndFill('f-authors', sets.authors, getSearch('s-authors'), 'authors');
-  filterAndFill('f-editors', sets.editors, getSearch('s-editors'), 'editors');
-  filterAndFill('f-translators', sets.translators, getSearch('s-translators'), 'translators');
-  filterAndFill('f-language', sets.languages, getSearch('s-language'), 'languages');
-  filterAndFill('f-place', sets.places, getSearch('s-place'), 'places');
-  filterAndFill('f-type', sets.types, getSearch('s-type'), 'types');
-  filterAndFill('f-tags', sets.tags, getSearch('s-tags'), 'tags');
-
-  render(filtered);
-  if (mapVisible()) updateMap(filtered);
-}
-
-function clearFilters() {
-  ['s-authors','s-editors','s-translators','s-language','s-place','s-type','s-tags'].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.value = '';
-  });
-  ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags'].forEach(id => {
-    const el = document.getElementById(id);
-    Array.from(el.options).forEach(o => o.selected = false);
-  });
-  ['f-year-exact','f-year-min','f-year-max'].forEach(id => document.getElementById(id).value = '');
-  buildFilters(VIEW);
-  render(VIEW);
-  if (mapVisible()) updateMap(VIEW);
-}
-
-function chips(values, key) {
-  if (!values || !values.length) return '';
-  return values.map(v => `<span class="filter-chip" data-filter="${key}" data-value="${escapeAttr(v)}">${escapeHTML(v)}</span>`).join(' ');
-}
-
-function render(items) {
-  const container = document.getElementById('results');
-  const count = document.getElementById('count');
-  count.textContent = items.length.toString();
-
-  if (!items.length) {
-    container.innerHTML = '<div class="card">No items match your filters.</div>';
-    return;
-  }
-
-  const html = items.map(it => {
-    const hTitle = it.title ? `<div class="title">${escapeHTML(it.title)}</div>` : '';
-
-    const authorsLine = it.authors.length ? `Authors: ${chips(it.authors, 'authors')}` : '';
-    const editorsLine = it.editors.length ? `Editors: ${chips(it.editors, 'editors')}` : '';
-    const translatorsLine = it.translators.length ? `Translators: ${chips(it.translators, 'translators')}` : '';
-    const typeLine = it.type ? `Type: ${chips([it.type], 'type')}` : '';
-    const langLine = it.language ? `Language: ${chips([it.language], 'language')}` : '';
-    const placeLine = it.place ? `Place: ${chips([it.place], 'place')}` : '';
-    const yearLine = (it.year !== null && it.year !== undefined) ? `Year: ${chips([String(it.year)], 'year')}` : '';
-
-    const hMeta = [authorsLine, editorsLine, translatorsLine, typeLine, langLine, placeLine, yearLine]
-      .filter(Boolean)
-      .map(x => `<div class="meta">${x}</div>`).join('');
-
-    const badges = (it.tags || []).map(t => `<span class="badge filter-chip" data-filter="tags" data-value="${escapeAttr(t)}">${escapeHTML(t)}</span>`).join('');
-
-    const links = [
-      it.url ? `<a href="${escapeAttr(it.url)}" target="_blank" rel="noopener">Link</a>` : ''
-    ].filter(Boolean).join(' | ');
-
-    return `<div class="card">
-      ${hTitle}
-      ${hMeta}
-      ${badges ? `<div class="badges">${badges}</div>` : ''}
-      ${links ? `<div class="meta">${links}</div>` : ''}
-    </div>`;
-  }).join('');
-
-  container.innerHTML = html;
-}
-
-/* ========= Map (Leaflet) ========= */
-let map, markersLayer;
-
-function ensureMap() {
-  if (map) return;
-  initMap();
-}
-function initMap() {
-  const mapEl = document.getElementById('map');
-  if (!mapEl) return;
-  map = L.map('map', { scrollWheelZoom: true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-  markersLayer = L.layerGroup().addTo(map);
-  map.setView([40.3, 45.3], 6);
-}
-function mapVisible() {
-  const panel = document.getElementById('map-panel');
-  return panel && !panel.hasAttribute('hidden');
-}
-
-function updateMap(items) {
-  if (!map || !markersLayer) return;
-  markersLayer.clearLayers();
-
-  // Aggregate by canonical place
-  const byPlace = new Map();
-  items.forEach(it => {
-    if (!it.place) return;
-    const canon = canonicalPlace(it.place);
-    if (!canon) return;
-    if (!byPlace.has(canon)) byPlace.set(canon, { label: canon, items: [] });
-    byPlace.get(canon).items.push(it);
-  });
-
-  const bounds = [];
-  const promises = [];
-
-  byPlace.forEach((obj, place) => {
-    const p = geocode(place).then(coord => {
-      if (!coord) return;
-      const count = obj.items.length;
-      const sample = obj.items.slice(0, 6).map(x => `• ${escapeHTML(x.title)}`).join('<br>');
-      const popup = `<strong>${escapeHTML(place)}</strong><br>${count} item(s)<br>${sample}${obj.items.length>6?'<br>…':''}`;
-      const marker = L.marker([coord.lat, coord.lon]).bindPopup(popup);
-      markersLayer.addLayer(marker);
-      bounds.push([coord.lat, coord.lon]);
-    }).catch(() => {});
-    promises.push(p);
-  });
-
-  Promise.all(promises).then(() => {
-    if (bounds.length) {
-      map.fitBounds(bounds, { padding: [20, 20] });
-      setTimeout(() => map.invalidateSize(), 50);
-    }
-  });
-}
-
-function geocode(place) {
-  const key = 'geo:' + place.toLowerCase();
-  const cached = localStorage.getItem(key);
-  if (cached) {
-    try {
-      const obj = JSON.parse(cached);
-      if (obj && typeof obj.lat === 'number' && typeof obj.lon === 'number') {
-        return Promise.resolve(obj);
-      }
-    } catch (_) {}
-  }
-  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(place);
-  return fetch(url, { headers: { 'Accept': 'application/json' }})
-    .then(r => r.json())
-    .then(arr => {
-      if (Array.isArray(arr) && arr[0]) {
-        const coord = { lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
-        localStorage.setItem(key, JSON.stringify(coord));
-        return coord;
-      }
-      return null;
-    })
-    .catch(() => null);
-}
+  filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators
