@@ -514,9 +514,7 @@ function render(items) {
 /* ========= Map (Leaflet) ========= */
 let map, markersLayer;
 
-function ensureMap() {
-  if (map) return;
-  initMap();
+function initMap() { const mapEl = document.getElementById('map'); if (!mapEl) return; map = L.map('map', { scrollWheelZoom: true }); L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap contributors' }).addTo(map); markersLayer = L.layerGroup().addTo(map); map.setView([40.3, 45.3], 6); }
 }
 function initMap() {
   const mapEl = document.getElementById('map');
