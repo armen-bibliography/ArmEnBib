@@ -1,116 +1,312 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <title>Library</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="styles.css?v=6">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="anonymous">
-</head>
-<body>
-  <header>
-    <img id="hero" src="Armen.jpeg" alt="Header image">
-    <h1>Library</h1>
-  </header>
+// Load the RDF instead of JSON
+const DATA_URL = 'Exported Items.rdf';
 
-  <!-- Bilingual titles (between header and filters, not using h1/h2 tags) -->
-  <section id="site-titles">
-    <div class="title-en-1">Armenian Studies Bibliography</div>
-    <div class="title-en-2">ArmEn Project</div>
-    <div class="title-hy-1">Հայագիտական մատենագիտություն</div>
-    <div class="title-hy-2">ArmEn նախագիծ</div>
-  </section>
+/* ========= Helpers ========= */
+function nameStr(p) {
+  if (!p || typeof p !== 'object') return '';
+  const fam = p.family || '';
+  const giv = p.given || '';
+  const parts = [fam, giv].filter(Boolean);
+  return parts.join(', ').trim();
+}
+function listNames(arr) {
+  if (!Array.isArray(arr)) return [];
+  return arr.map(nameStr).filter(Boolean);
+}
+function uniqueSorted(values) {
+  return Array.from(new Set(values.filter(v => v !== undefined && v !== null && v !== '')))
+    .sort((a,b) => (''+a).localeCompare(''+b, undefined, {sensitivity:'base'}));
+}
+function fold(s) {
+  return String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+function extractTokens(label) {
+  if (!label) return [];
+  const tokens = new Set();
+  const add = (t) => {
+    const f = fold(t).trim();
+    if (f) tokens.add(f);
+  };
+  add(label);
+  const bracketMatches = Array.from(label.matchAll(/\[([^\]]+)\]/g));
+  bracketMatches.forEach(m => add(m[1]));
+  const base = label.replace(/\[[^\]]*\]/g, ' ');
+  const parts = base.split(/[\s,;:/()]+/g).filter(Boolean);
+  parts.forEach(add);
+  parts.forEach(p => p.split(/[-'’]+/g).forEach(add));
+  return Array.from(tokens);
+}
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function escapeAttr(s) {
+  return String(s).replace(/"/g, '&quot;');
+}
+function canonicalPlace(s) {
+  if (!s) return '';
+  const m = s.match(/\[([^\]]+)\]/);
+  return (m ? m[1] : s).trim();
+}
 
-  <!-- Filters -->
-  <section id="filters" aria-label="Filters">
-    <div class="filter">
-      <label for="s-authors">Author</label>
-      <input type="text" id="s-authors" placeholder="type to filter authors">
-      <select id="f-authors" multiple aria-label="Authors"></select>
-    </div>
-    <div class="filter">
-      <label for="s-editors">Editor</label>
-      <input type="text" id="s-editors" placeholder="type to filter editors">
-      <select id="f-editors" multiple aria-label="Editors"></select>
-    </div>
-    <div class="filter">
-      <label for="s-translators">Translator</label>
-      <input type="text" id="s-translators" placeholder="type to filter translators">
-      <select id="f-translators" multiple aria-label="Translators"></select>
-    </div>
+/* ========= State ========= */
+let RAW = [];
+let VIEW = [];
+let OPTIONS = {
+  authors: [],
+  editors: [],
+  translators: [],
+  languages: [],
+  places: [],
+  types: [],
+  tags: [],
+  publishers: [],
+  publications: []
+};
+let TOKENS = {
+  authors: new Map(),
+  editors: new Map(),
+  translators: new Map(),
+  languages: new Map(),
+  places: new Map(),
+  types: new Map(),
+  tags: new Map(),
+  publishers: new Map(),
+  publications: new Map()
+};
 
-    <div class="filter">
-      <label for="s-language">Language</label>
-      <input type="text" id="s-language" placeholder="type to filter languages">
-      <select id="f-language" multiple aria-label="Languages"></select>
-    </div>
-    <div class="filter">
-      <div class="label-row">
-        <label for="s-place">Place</label>
-        <button id="btn-toggle-map" type="button">Show map</button>
-      </div>
-      <input type="text" id="s-place" placeholder="type to filter places">
-      <select id="f-place" multiple aria-label="Places"></select>
-    </div>
-    <div class="filter">
-      <label for="s-type">Type</label>
-      <input type="text" id="s-type" placeholder="type to filter types">
-      <select id="f-type" multiple aria-label="Types"></select>
-    </div>
+/* ========= Namespaces ========= */
+const NS = {
+  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+  z: 'http://www.zotero.org/namespaces/export#',
+  dc: 'http://purl.org/dc/elements/1.1/',
+  dcterms: 'http://purl.org/dc/terms/',
+  bib: 'http://purl.org/net/biblio#',
+  foaf: 'http://xmlns.com/foaf/0.1/',
+  vcard: 'http://nwalsh.com/rdf/vCard#',
+  prism: 'http://prismstandard.org/namespaces/1.2/basic/'
+};
 
-    <!-- NEW: Publication (container/journal/book title) -->
-    <div class="filter">
-      <label for="s-publication">Publication</label>
-      <input type="text" id="s-publication" placeholder="type to filter publications">
-      <select id="f-publication" multiple aria-label="Publications"></select>
-    </div>
+function firstEl(node, ns, local) {
+  const list = node.getElementsByTagNameNS(ns, local);
+  return list && list.length ? list[0] : null;
+}
+function firstText(node, ns, local) {
+  const el = firstEl(node, ns, local);
+  return el ? el.textContent.trim() : '';
+}
+function allEls(node, ns, local) {
+  return Array.from(node.getElementsByTagNameNS(ns, local) || []);
+}
+function getYearFromDateStr(str) {
+  if (!str) return null;
+  const m = String(str).match(/\b(\d{4})\b/);
+  return m ? Number(m[1]) : null;
+}
+function readPeopleFromContainer(node, containerNS, containerLocal) {
+  const container = firstEl(node, containerNS, containerLocal);
+  if (!container) return [];
+  const persons = container.getElementsByTagNameNS(NS.foaf, 'Person');
+  const out = [];
+  Array.from(persons).forEach(p => {
+    const fam = firstText(p, NS.foaf, 'surname');
+    const giv = firstText(p, NS.foaf, 'givenName');
+    const label = [fam, giv].filter(Boolean).join(', ').trim();
+    if (label) out.push(label);
+  });
+  return uniqueSorted(out);
+}
+function readSubjects(node) {
+  const subs = Array.from(node.childNodes)
+    .filter(n => n.nodeType === 1 && n.namespaceURI === NS.dc && n.localName === 'subject')
+    .map(el => el.textContent.trim())
+    .filter(Boolean);
+  return uniqueSorted(subs);
+}
+function readPlace(node) {
+  const pub = firstEl(node, NS.dc, 'publisher');
+  if (!pub) return null;
+  const org = firstEl(pub, NS.foaf, 'Organization');
+  if (!org) return null;
+  const adr = firstEl(org, NS.vcard, 'adr');
+  if (!adr) return null;
+  const addr = firstEl(adr, NS.vcard, 'Address');
+  if (!addr) return null;
+  const loc = firstEl(addr, NS.vcard, 'locality');
+  return loc ? loc.textContent.trim() : null;
+}
+function readPublisherName(node) {
+  const pub = firstEl(node, NS.dc, 'publisher');
+  if (!pub) return null;
+  const org = firstEl(pub, NS.foaf, 'Organization');
+  if (!org) return null;
+  const name = firstText(org, NS.foaf, 'name');
+  return name || null;
+}
+function readContainerTitle(node) {
+  // From isPartOf: Journal or Book
+  const partOf = firstEl(node, NS.dcterms, 'isPartOf');
+  if (partOf) {
+    const journal = firstEl(partOf, NS.bib, 'Journal');
+    if (journal) {
+      const t = firstText(journal, NS.dc, 'title') || firstText(journal, NS.prism, 'publicationName');
+      if (t) return t;
+    }
+    const book = firstEl(partOf, NS.bib, 'Book');
+    if (book) {
+      const t = firstText(book, NS.dc, 'title');
+      if (t) return t;
+    }
+  }
+  // Some exports use prism:publicationName directly
+  const p = firstText(node, NS.prism, 'publicationName');
+  return p || null;
+}
+function readPages(node) {
+  return firstText(node, NS.bib, 'pages') || null;
+}
+function readURL(node) {
+  const about = node.getAttributeNS(NS.rdf, 'about') || node.getAttribute('rdf:about') || '';
+  if (about && /^(https?:|urn:)/i.test(about)) return about;
+  const ident = firstEl(node, NS.dc, 'identifier');
+  if (ident) {
+    const uri = firstEl(ident, NS.dcterms, 'URI');
+    if (uri) {
+      const val = firstEl(uri, NS.rdf, 'value');
+      if (val) return val.textContent.trim();
+    }
+  }
+  const anyURI = firstEl(node, NS.dcterms, 'URI');
+  if (anyURI) {
+    const val = firstEl(anyURI, NS.rdf, 'value');
+    if (val) return val.textContent.trim();
+  }
+  return null;
+}
 
-    <!-- NEW: Publisher (organization name) -->
-    <div class="filter">
-      <label for="s-publisher">Publisher</label>
-      <input type="text" id="s-publisher" placeholder="type to filter publishers">
-      <select id="f-publisher" multiple aria-label="Publishers"></select>
-    </div>
+/* ========= RDF Parse ========= */
+function parseRDFItems(xmlDoc) {
+  const candidates = [];
+  const withItemType = allEls(xmlDoc, NS.z, 'itemType').map(el => el.parentNode).filter((v, i, a) => a.indexOf(v) === i);
+  candidates.push(...withItemType);
+  ['Article', 'Book', 'BookSection', 'Journal'].forEach(local => {
+    candidates.push(...Array.from(xmlDoc.getElementsByTagNameNS(NS.bib, local)));
+  });
+  const items = Array.from(new Set(candidates));
 
-    <div class="filter">
-      <label for="s-tags">Tags</label>
-      <input type="text" id="s-tags" placeholder="type to filter tags">
-      <select id="f-tags" multiple aria-label="Tags"></select>
-    </div>
+  const out = [];
+  for (const item of items) {
+    const localName = (item.localName || '').toLowerCase();
+    if (localName === 'memo' || localName === 'attachment') continue;
 
-    <div class="filter">
-      <label for="f-year-exact">Year exact</label>
-      <input type="number" id="f-year-exact" placeholder="e.g. 2021" aria-label="Exact year">
-    </div>
-    <div class="filter">
-      <label>Year range</label>
-      <div class="range">
-        <input type="number" id="f-year-min" placeholder="min" aria-label="Year minimum">
-        <span>–</span>
-        <input type="number" id="f-year-max" placeholder="max" aria-label="Year maximum">
-      </div>
-    </div>
-    <div class="actions">
-      <button id="btn-clear" type="button">Clear filters</button>
-    </div>
-  </section>
+    const title = firstText(item, NS.dc, 'title');
+    if (!title) continue;
 
-  <section id="stats">
-    <span id="count">0</span> items
-  </section>
+    const typeRaw = firstText(item, NS.z, 'itemType') || localName || '';
+    const type = String(typeRaw).toLowerCase();
 
-  <!-- Map panel -->
-  <section id="map-panel" hidden aria-label="Map">
-    <div id="map"></div>
-  </section>
+    const authors = readPeopleFromContainer(item, NS.bib, 'authors');
+    const editors = readPeopleFromContainer(item, NS.bib, 'editors');
+    const translators = readPeopleFromContainer(item, NS.z, 'translators');
 
-  <!-- Active filters bar (chips with x to remove). Populated by JS. -->
-  <section id="active-filters" hidden aria-label="Active filters"></section>
+    const language = firstText(item, NS.z, 'language') || '';
+    const place = readPlace(item);
+    const publisherName = readPublisherName(item);
+    const containerTitle = readContainerTitle(item) || null;
 
-  <!-- Results -->
-  <section id="results" aria-live="polite"></section>
+    const dateStr = firstText(item, NS.dc, 'date') || '';
+    const year = getYearFromDateStr(dateStr);
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin="anonymous"></script>
-  <script src="app.js?v=6"></script>
-</body>
-</html>
+    const url = readURL(item);
+    const doi = null;
+    const tags = readSubjects(item);
+    const pages = readPages(item);
+    const libraryCatalog = firstText(item, NS.z, 'libraryCatalog') || null;
+
+    const key = firstText(item, NS.z, 'citationKey') || item.getAttributeNS(NS.rdf, 'about') || item.getAttribute('rdf:about') || null;
+
+    out.push({
+      key,
+      type,
+      title,
+      authors,
+      editors,
+      translators,
+      language,
+      place,
+      publisherName,
+      containerTitle,
+      pages,
+      year,
+      url,
+      doi,
+      libraryCatalog,
+      tags,
+      _src: null
+    });
+  }
+  return out;
+}
+
+/* ========= Load data ========= */
+fetch(DATA_URL)
+  .then(r => {
+    if (!r.ok) throw new Error('Failed to fetch data: ' + r.status + ' ' + r.url);
+    return r.text();
+  })
+  .then(txt => {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(txt, 'application/xml');
+    const parserError = xml.getElementsByTagName('parsererror')[0];
+    if (parserError) throw new Error('Failed to parse RDF');
+    RAW = parseRDFItems(xml);
+    VIEW = RAW.map(it => ({
+      key: it.key || null,
+      type: (it.type || '').toLowerCase(),
+      title: it.title || '',
+      authors: it.authors || [],
+      editors: it.editors || [],
+      translators: it.translators || [],
+      language: it.language || '',
+      place: it.place || null,
+      publisherName: it.publisherName || null,
+      containerTitle: it.containerTitle || null,
+      pages: it.pages || null,
+      year: it.year !== undefined ? it.year : null,
+      url: it.url || null,
+      doi: it.doi || null,
+      libraryCatalog: it.libraryCatalog || null,
+      tags: it.tags || [],
+      _src: it
+    }));
+    buildFilters(VIEW);
+    render(VIEW);
+    bindEvents();
+  })
+  .catch(err => {
+    document.getElementById('results').innerHTML = '<div class="card">Error: ' + (err && err.message ? err.message : err) + '</div>';
+  });
+
+/* ========= Filters build/fill ========= */
+function buildFilters(items) {
+  const sets = computeOptionSets(items);
+  OPTIONS = sets;
+
+  TOKENS.authors = new Map(OPTIONS.authors.map(v => [v, extractTokens(v)]));
+  TOKENS.editors = new Map(OPTIONS.editors.map(v => [v, extractTokens(v)]));
+  TOKENS.translators = new Map(OPTIONS.translators.map(v => [v, extractTokens(v)]));
+  TOKENS.languages = new Map(OPTIONS.languages.map(v => [v, extractTokens(v)]));
+  TOKENS.places = new Map(OPTIONS.places.map(v => [v, extractTokens(v)]));
+  TOKENS.types = new Map(OPTIONS.types.map(v => [v, extractTokens(v)]));
+  TOKENS.tags = new Map(OPTIONS.tags.map(v => [v, extractTokens(v)]));
+  TOKENS.publishers = new Map(OPTIONS.publishers.map(v => [v, extractTokens(v)]));
+  TOKENS.publications = new Map(OPTIONS.publications.map(v => [v, extractTokens(v)]));
+
+  filterAndFill('f-authors', OPTIONS.authors, getSearch('s-authors'), 'authors');
+  filterAndFill('f-editors', OPTIONS.editors, getSearch('s-editors'), 'editors');
+  filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'), 'translators');
+  filterAndFill('f-language', OPTIONS.languages, getSearch('s-language'), 'languages');
+  filterAndFill('f-place', OPTIONS.places, getSearch('s-place'), 'places');
+  filterAndFill('f-type', OPTIONS.types, getSearch('
