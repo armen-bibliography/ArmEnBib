@@ -15,16 +15,18 @@ h1 { margin:0; font-size:20px; }
   width: 100%;
 }
 
+ @media (min-width: 768px) {
+  #filters {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Large screens (lg) and up */
 @media (min-width: 1024px) {
   #filters {
-      grid-template-columns: repeat(auto, 2fr);
+    grid-template-columns: repeat(3, 1fr);
   }
-}
-@media (min-width: 768px) {
-  #filters {
-      grid-template-columns: repeat(auto, 1fr);
-  }
-}
+} 
 
 .filter {
   display:flex;
