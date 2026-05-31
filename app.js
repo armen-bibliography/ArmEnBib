@@ -1,5 +1,5 @@
 // Load the JSON (keeps your original data; no changes written back)
-const DATA_URL = 'Exported%20Items.json'; // URL-encoded space
+const DATA_URL = 'Exported%20Items.json';
 
 // Helpers to read CSL JSON fields without changing the file
 function nameStr(p) {
@@ -33,6 +33,15 @@ function getPlace(it) {
 
 let RAW = [];
 let VIEW = []; // normalized for filtering only (not saved)
+let OPTIONS = {
+  authors: [],
+  editors: [],
+  translators: [],
+  languages: [],
+  places: [],
+  types: [],
+  tags: []
+};
 
 // Load data and initialize
 fetch(DATA_URL)
@@ -55,7 +64,7 @@ fetch(DATA_URL)
       url: it.URL || null,
       doi: it.DOI || null,
       tags: getTags(it),
-      _src: it // keep original in case you want to display more later
+      _src: it
     }));
     buildFilters(VIEW);
     render(VIEW);
@@ -66,34 +75,60 @@ fetch(DATA_URL)
   });
 
 function buildFilters(items) {
-  const authors = uniqueSorted(items.flatMap(x => x.authors));
-  const editors = uniqueSorted(items.flatMap(x => x.editors));
-  const translators = uniqueSorted(items.flatMap(x => x.translators));
-  const languages = uniqueSorted(items.map(x => x.language));
-  const places = uniqueSorted(items.map(x => x.place));
-  const types = uniqueSorted(items.map(x => x.type));
-  const tags = uniqueSorted(items.flatMap(x => x.tags));
+  OPTIONS.authors = uniqueSorted(items.flatMap(x => x.authors));
+  OPTIONS.editors = uniqueSorted(items.flatMap(x => x.editors));
+  OPTIONS.translators = uniqueSorted(items.flatMap(x => x.translators));
+  OPTIONS.languages = uniqueSorted(items.map(x => x.language));
+  OPTIONS.places = uniqueSorted(items.map(x => x.place));
+  OPTIONS.types = uniqueSorted(items.map(x => x.type));
+  OPTIONS.tags = uniqueSorted(items.flatMap(x => x.tags));
 
-  fillOptions('f-authors', authors);
-  fillOptions('f-editors', editors);
-  fillOptions('f-translators', translators);
-  fillOptions('f-language', languages);
-  fillOptions('f-place', places);
-  fillOptions('f-type', types);
-  fillOptions('f-tags', tags);
+  filterAndFill('f-authors', OPTIONS.authors, getSearch('s-authors'));
+  filterAndFill('f-editors', OPTIONS.editors, getSearch('s-editors'));
+  filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'));
+  filterAndFill('f-language', OPTIONS.languages, getSearch('s-language'));
+  filterAndFill('f-place', OPTIONS.places, getSearch('s-place'));
+  filterAndFill('f-type', OPTIONS.types, getSearch('s-type'));
+  filterAndFill('f-tags', OPTIONS.tags, getSearch('s-tags'));
 }
-function fillOptions(id, values) {
+
+function getSearch(id) {
   const el = document.getElementById(id);
+  return el ? el.value : '';
+}
+
+function filterAndFill(selectId, allValues, query) {
+  const el = document.getElementById(selectId);
+  const prev = Array.from(el.selectedOptions).map(o => o.value);
+  const q = (query || '').toLowerCase();
+  const vals = allValues.filter(v => (v && v.toLowerCase().includes(q)) || prev.includes(v));
   el.innerHTML = '';
-  values.forEach(v => {
+  vals.forEach(v => {
     const opt = document.createElement('option');
     opt.value = v;
     opt.textContent = v;
+    if (prev.includes(v)) opt.selected = true;
     el.appendChild(opt);
   });
 }
 
 function bindEvents() {
+  // Filter option lists by search boxes
+  const searchMap = [
+    ['s-authors','f-authors','authors'],
+    ['s-editors','f-editors','editors'],
+    ['s-translators','f-translators','translators'],
+    ['s-language','f-language','languages'],
+    ['s-place','f-place','places'],
+    ['s-type','f-type','types'],
+    ['s-tags','f-tags','tags']
+  ];
+  searchMap.forEach(([sId, fId, key]) => {
+    const sEl = document.getElementById(sId);
+    if (sEl) sEl.addEventListener('input', () => filterAndFill(fId, OPTIONS[key], sEl.value));
+  });
+
+  // Apply item filters when selections or numbers change
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-year-exact','f-year-min','f-year-max']
     .forEach(id => document.getElementById(id).addEventListener('input', applyFilters));
   document.getElementById('btn-clear').addEventListener('click', clearFilters);
@@ -123,9 +158,8 @@ function applyFilters() {
     if (selLangs.length && !selLangs.includes(it.language)) return false;
     if (selPlaces.length && !selPlaces.includes(it.place)) return false;
     if (selTypes.length && !selTypes.includes(it.type)) return false;
-    if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false; // all selected tags must be present
+    if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false; // AND for tags
 
-    // Year filters
     const y = (it.year !== null && it.year !== undefined) ? Number(it.year) : null;
     if (yearExact !== '') {
       if (y === null || y !== Number(yearExact)) return false;
@@ -140,6 +174,13 @@ function applyFilters() {
 }
 
 function clearFilters() {
+  ['s-authors','s-editors','s-translators','s-language','s-place','s-type','s-tags'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  // Rebuild all option lists to full
+  buildFilters(VIEW);
+
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags'].forEach(id => {
     const el = document.getElementById(id);
     Array.from(el.options).forEach(o => o.selected = false);
