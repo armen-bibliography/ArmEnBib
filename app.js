@@ -1,7 +1,7 @@
-// Load the JSON (keeps your original data; no changes written back)
-const DATA_URL = 'Exported%20Items.json';
+// Load the RDF instead of JSON
+const DATA_URL = 'Exported%20Items.rdf';
 
-// Helpers to read CSL JSON fields without changing the file
+// Helpers
 function nameStr(p) {
   if (!p || typeof p !== 'object') return '';
   const fam = p.family || '';
@@ -13,33 +13,16 @@ function listNames(arr) {
   if (!Array.isArray(arr)) return [];
   return arr.map(nameStr).filter(Boolean);
 }
-function yearFromIssued(issued) {
-  try {
-    const dp = (issued && issued['date-parts']) || [];
-    return (Array.isArray(dp) && dp[0] && dp[0][0]) || null;
-  } catch (_) { return null; }
-}
 function uniqueSorted(values) {
   return Array.from(new Set(values.filter(v => v !== undefined && v !== null && v !== '')))
     .sort((a,b) => (''+a).localeCompare(''+b, undefined, {sensitivity:'base'}));
 }
-function getTags(it) {
-  const tags = Array.isArray(it.tags) ? it.tags : [];
-  return tags.map(t => (t && t.tag) ? t.tag : null).filter(Boolean);
-}
-function getPlace(it) {
-  return it['publisher-place'] || it['event-place'] || it['jurisdiction'] || it['original-publisher-place'] || null;
-}
-
-// Fold for case/diacritic-insensitive comparison (keeps non-Latin scripts as-is)
 function fold(s) {
   return String(s || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 }
-
-// Extract tokens from a label: split family/given, spaces, commas, and include bracketed variants
 function extractTokens(label) {
   if (!label) return [];
   const tokens = new Set();
@@ -47,29 +30,24 @@ function extractTokens(label) {
     const f = fold(t).trim();
     if (f) tokens.add(f);
   };
-
-  // Take full label
   add(label);
-
-  // Extract bracketed content (e.g., "Աբեղյան [Abełyan]" -> "Abełyan")
   const bracketMatches = Array.from(label.matchAll(/\[([^\]]+)\]/g));
   bracketMatches.forEach(m => add(m[1]));
-
-  // Remove bracket parts to tokenize base separately
   const base = label.replace(/\[[^\]]*\]/g, ' ');
-
-  // Split by common separators
   const parts = base.split(/[\s,;:/()]+/g).filter(Boolean);
   parts.forEach(add);
-
-  // Also split on hyphens and apostrophes within parts
   parts.forEach(p => p.split(/[-'’]+/g).forEach(add));
-
   return Array.from(tokens);
+}
+function escapeHTML(s) {
+  return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+}
+function escapeAttr(s) {
+  return String(s).replace(/"/g, '&quot;');
 }
 
 let RAW = [];
-let VIEW = []; // normalized for filtering only (not saved)
+let VIEW = [];
 let OPTIONS = {
   authors: [],
   editors: [],
@@ -79,7 +57,6 @@ let OPTIONS = {
   types: [],
   tags: []
 };
-// Token maps to support search by any word/variant present in the label
 let TOKENS = {
   authors: new Map(),
   editors: new Map(),
@@ -90,27 +67,172 @@ let TOKENS = {
   tags: new Map()
 };
 
+// Namespaces
+const NS = {
+  rdf: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#',
+  z: 'http://www.zotero.org/namespaces/export#',
+  dc: 'http://purl.org/dc/elements/1.1/',
+  dcterms: 'http://purl.org/dc/terms/',
+  bib: 'http://purl.org/net/biblio#',
+  foaf: 'http://xmlns.com/foaf/0.1/',
+  vcard: 'http://nwalsh.com/rdf/vCard#',
+  prism: 'http://prismstandard.org/namespaces/1.2/basic/'
+};
+
+function firstEl(node, ns, local) {
+  const list = node.getElementsByTagNameNS(ns, local);
+  return list && list.length ? list[0] : null;
+}
+function firstText(node, ns, local) {
+  const el = firstEl(node, ns, local);
+  return el ? el.textContent.trim() : '';
+}
+function allEls(node, ns, local) {
+  return Array.from(node.getElementsByTagNameNS(ns, local) || []);
+}
+function getYearFromDateStr(str) {
+  if (!str) return null;
+  const m = String(str).match(/\b(\d{4})\b/);
+  return m ? Number(m[1]) : null;
+}
+function readPeopleFromContainer(node, containerNS, containerLocal) {
+  const container = firstEl(node, containerNS, containerLocal);
+  if (!container) return [];
+  const persons = container.getElementsByTagNameNS(NS.foaf, 'Person');
+  const out = [];
+  Array.from(persons).forEach(p => {
+    const fam = firstText(p, NS.foaf, 'surname');
+    const giv = firstText(p, NS.foaf, 'givenName');
+    const label = [fam, giv].filter(Boolean).join(', ').trim();
+    if (label) out.push(label);
+  });
+  return uniqueSorted(out);
+}
+function readSubjects(node) {
+  const subs = allEls(node, NS.dc, 'subject').map(el => el.textContent.trim()).filter(Boolean);
+  return uniqueSorted(subs);
+}
+function readPlace(node) {
+  // publisher -> foaf:Organization -> vcard:adr -> vcard:Address -> vcard:locality
+  const pub = firstEl(node, NS.dc, 'publisher');
+  if (!pub) return null;
+  const org = firstEl(pub, NS.foaf, 'Organization');
+  if (!org) return null;
+  const adr = firstEl(org, NS.vcard, 'adr');
+  if (!adr) return null;
+  const addr = firstEl(adr, NS.vcard, 'Address');
+  if (!addr) return null;
+  const loc = firstEl(addr, NS.vcard, 'locality');
+  return loc ? loc.textContent.trim() : null;
+}
+function readURL(node) {
+  // Prefer rdf:about if it's a full URL
+  const about = node.getAttributeNS(NS.rdf, 'about') || node.getAttribute('rdf:about') || '';
+  if (about && /^(https?:|urn:)/i.test(about)) return about;
+
+  // Try dc:identifier/dcterms:URI/rdf:value
+  const ident = firstEl(node, NS.dc, 'identifier');
+  if (ident) {
+    const uri = firstEl(ident, NS.dcterms, 'URI');
+    if (uri) {
+      const val = firstEl(uri, NS.rdf, 'value');
+      if (val) return val.textContent.trim();
+    }
+  }
+  // Fallback: direct dcterms:URI/rdf:value
+  const anyURI = firstEl(node, NS.dcterms, 'URI');
+  if (anyURI) {
+    const val = firstEl(anyURI, NS.rdf, 'value');
+    if (val) return val.textContent.trim();
+  }
+  return null;
+}
+function parseRDFItems(xmlDoc) {
+  // Select items that represent bibliographic entries: ones having z:itemType or with dc:title under bib:* but skip Memos and Attachments
+  const candidates = [];
+  // any element with z:itemType
+  const withItemType = allEls(xmlDoc, NS.z, 'itemType').map(el => el.parentNode).filter((v, i, a) => a.indexOf(v) === i);
+  candidates.push(...withItemType);
+  // Also include bib:Article/Book/BookSection even if missing z:itemType
+  ['Article', 'Book', 'BookSection', 'Journal'].forEach(local => {
+    candidates.push(...Array.from(xmlDoc.getElementsByTagNameNS(NS.bib, local)));
+  });
+  // Deduplicate
+  const items = Array.from(new Set(candidates));
+
+  const out = [];
+  for (const item of items) {
+    // Skip memos and attachments
+    const localName = (item.localName || '').toLowerCase();
+    if (localName === 'memo' || localName === 'attachment') continue;
+
+    const title = firstText(item, NS.dc, 'title');
+    if (!title) continue; // must have title to show
+
+    const typeRaw = firstText(item, NS.z, 'itemType') || localName || '';
+    const type = String(typeRaw).toLowerCase();
+
+    const authors = readPeopleFromContainer(item, NS.bib, 'authors');
+    const editors = readPeopleFromContainer(item, NS.bib, 'editors');
+    // translators live under z:translators
+    const translators = readPeopleFromContainer(item, NS.z, 'translators');
+
+    const language = firstText(item, NS.z, 'language') || '';
+    const place = readPlace(item);
+    const dateStr = firstText(item, NS.dc, 'date') || '';
+    const year = getYearFromDateStr(dateStr);
+
+    const url = readURL(item);
+    const doi = null; // not reliably present in this RDF
+    const tags = readSubjects(item);
+
+    const key = firstText(item, NS.z, 'citationKey') || item.getAttributeNS(NS.rdf, 'about') || item.getAttribute('rdf:about') || null;
+
+    out.push({
+      key,
+      type,
+      title,
+      authors,
+      editors,
+      translators,
+      language,
+      place,
+      year,
+      url,
+      doi,
+      tags,
+      _src: null
+    });
+  }
+  return out;
+}
+
 // Load data and initialize
 fetch(DATA_URL)
   .then(r => {
     if (!r.ok) throw new Error('Failed to fetch data: ' + r.status);
-    return r.json();
+    return r.text();
   })
-  .then(data => {
-    RAW = Array.isArray(data) ? data : [data];
+  .then(txt => {
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(txt, 'application/xml');
+    // Check for parse errors
+    const parserError = xml.getElementsByTagName('parsererror')[0];
+    if (parserError) throw new Error('Failed to parse RDF');
+    RAW = parseRDFItems(xml);
     VIEW = RAW.map(it => ({
-      key: it.id || it.key || null,
+      key: it.key || null,
       type: (it.type || '').toLowerCase(),
       title: it.title || '',
-      authors: listNames(it.author),
-      editors: listNames(it.editor),
-      translators: listNames(it.translator),
+      authors: it.authors || [],
+      editors: it.editors || [],
+      translators: it.translators || [],
       language: it.language || '',
-      place: getPlace(it),
-      year: yearFromIssued(it.issued),
-      url: it.URL || null,
-      doi: it.DOI || null,
-      tags: getTags(it),
+      place: it.place || null,
+      year: it.year !== undefined ? it.year : null,
+      url: it.url || null,
+      doi: it.doi || null,
+      tags: it.tags || [],
       _src: it
     }));
     buildFilters(VIEW);
@@ -130,7 +252,6 @@ function buildFilters(items) {
   OPTIONS.types = uniqueSorted(items.map(x => x.type));
   OPTIONS.tags = uniqueSorted(items.flatMap(x => x.tags));
 
-  // Build token maps
   TOKENS.authors = new Map(OPTIONS.authors.map(v => [v, extractTokens(v)]));
   TOKENS.editors = new Map(OPTIONS.editors.map(v => [v, extractTokens(v)]));
   TOKENS.translators = new Map(OPTIONS.translators.map(v => [v, extractTokens(v)]));
@@ -153,8 +274,6 @@ function getSearch(id) {
   return el ? el.value : '';
 }
 
-// Populate a <select> based on a query; show only values that START WITH the query
-// Match against ANY extracted token from the label (original words, family/given, bracketed variants)
 function filterAndFill(selectId, allValues, query, key) {
   const el = document.getElementById(selectId);
   const prevSelected = new Set(Array.from(el.selectedOptions).map(o => o.value));
@@ -171,13 +290,12 @@ function filterAndFill(selectId, allValues, query, key) {
     const opt = document.createElement('option');
     opt.value = v;
     opt.textContent = v;
-    if (prevSelected.has(v)) opt.selected = true; // keep selection if still visible
+    if (prevSelected.has(v)) opt.selected = true;
     el.appendChild(opt);
   });
 }
 
 function bindEvents() {
-  // Filter option lists as the user types (live)
   const searchMap = [
     ['s-authors','f-authors','authors'],
     ['s-editors','f-editors','editors'],
@@ -192,7 +310,6 @@ function bindEvents() {
     if (sEl) sEl.addEventListener('input', () => filterAndFill(fId, OPTIONS[key], sEl.value, key));
   });
 
-  // Apply item filters when selections or year inputs change
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags','f-year-exact','f-year-min','f-year-max']
     .forEach(id => document.getElementById(id).addEventListener('input', applyFilters));
 
@@ -223,7 +340,7 @@ function applyFilters() {
     if (selLangs.length && !selLangs.includes(it.language)) return false;
     if (selPlaces.length && !selPlaces.includes(it.place)) return false;
     if (selTypes.length && !selTypes.includes(it.type)) return false;
-    if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false; // AND for tags
+    if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false;
 
     const y = (it.year !== null && it.year !== undefined) ? Number(it.year) : null;
     if (yearExact !== '') {
@@ -243,7 +360,6 @@ function clearFilters() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  // Rebuild all option lists to full
   buildFilters(VIEW);
 
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags'].forEach(id => {
@@ -279,8 +395,7 @@ function render(items) {
     const badges = (it.tags || []).map(t => `<span class="badge">${escapeHTML(t)}</span>`).join('');
 
     const links = [
-      it.url ? `<a href="${escapeAttr(it.url)}" target="_blank" rel="noopener">Link</a>` : '',
-      it.doi ? `<a href="https://doi.org/${encodeURIComponent(it.doi)}" target="_blank" rel="noopener">DOI</a>` : ''
+      it.url ? `<a href="${escapeAttr(it.url)}" target="_blank" rel="noopener">Link</a>` : ''
     ].filter(Boolean).join(' | ');
 
     return `<div class="card">
@@ -292,11 +407,4 @@ function render(items) {
   }).join('');
 
   container.innerHTML = html;
-}
-
-function escapeHTML(s) {
-  return String(s).replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
-}
-function escapeAttr(s) {
-  return String(s).replace(/"/g, '&quot;');
 }
