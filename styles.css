@@ -1,8 +1,9 @@
-
+/* Base */
 body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: 0; color: #222; }
 *, *::before, *::after { box-sizing: border-box; }
 html, body { max-width: 100%; overflow-x: hidden; }
 
+/* Header */
 header { background:#f4f4f4; border-bottom:1px solid #e5e5e5; }
 #hero {
   display:block;
@@ -11,17 +12,14 @@ header { background:#f4f4f4; border-bottom:1px solid #e5e5e5; }
   object-fit:cover;
   object-position:center;
 }
-h1 { margin:0; padding:12px 16px; font-size:20px; }
+header h1 { margin:0; padding:12px 16px; font-size:20px; }
 
-/* Site titles (not header h1/h2) */
-#site-titles {
-  padding:12px 16px 0;
-  border-bottom:1px solid #eee;
-}
-.title-en-1 { font-size:20px; font-weight:600; margin:2px 0; }
-.title-en-2 { font-size:16px; color:#555; margin:2px 0 10px; }
-.title-hy-1 { font-size:20px; font-weight:600; margin:2px 0; }
-.title-hy-2 { font-size:16px; color:#555; margin:2px 0 12px; }
+/* Site titles (between header and filters, not using h1/h2) */
+#site-titles { padding:16px; border-bottom:1px solid #eee; background:#fff; }
+#site-titles .title-en-1 { font-size:22px; font-weight:600; margin:2px 0; }
+#site-titles .title-en-2 { font-size:16px; color:#555; margin:2px 0 8px; }
+#site-titles .title-hy-1 { font-size:20px; font-weight:600; margin:2px 0; }
+#site-titles .title-hy-2 { font-size:16px; color:#555; margin:2px 0; }
 
 /* Filters: responsive grid */
 #filters {
@@ -105,39 +103,51 @@ button:hover { background:#f0f0f0; }
   border: 1px solid #e6e6e6;
   border-radius: 6px;
 }
-@media (max-width: 480px) {
-  #map { height: 260px; }
-}
+@media (max-width: 480px) { #map { height: 260px; } }
 
 /* Active filters bar */
 #active-filters {
   display:flex;
   flex-wrap:wrap;
   gap:8px;
-  padding:8px 16px 12px;
+  padding:10px 16px;
+  border-top:1px solid #eee;
   border-bottom:1px solid #eee;
-  background:#fafafa;
+  background:#fcfcfc;
 }
 #active-filters[hidden] { display:none; }
+
 .active-chip {
   display:inline-flex;
   align-items:center;
   gap:6px;
-  padding:3px 8px;
+  padding:4px 8px;
   font-size:12px;
-  border:1px solid #e2e2e2;
-  background:#f6f6f6;
+  background:#eef6ff;
+  border:1px solid #cfe3ff;
   border-radius:999px;
+  color:#1a3d6d;
 }
 .active-chip .x {
+  display:inline-block;
+  width:14px;
+  height:14px;
+  line-height:12px;
+  text-align:center;
+  border-radius:50%;
+  background:#e2edff;
+  border:1px solid #cfe3ff;
+  color:#1a3d6d;
   font-weight:700;
   cursor:pointer;
-  color:#666;
+  user-select:none;
 }
-.active-chip .x:hover { color:#000; }
-#btn-clear-active {
-  padding:6px 8px;
+#active-filters .clear-all {
+  margin-left:auto;
+  padding:6px 10px;
   font-size:12px;
+  border-color:#d5d5d5;
+  background:#f6f6f6;
 }
 
 /* Results grid */
@@ -167,7 +177,7 @@ button:hover { background:#f0f0f0; }
   border-radius:999px;
 }
 
-/* Generic clickable chip used for all values */
+/* Generic clickable chip used for all values (authors, editors, translators, type, language, place, year, tags, publisher, publication) */
 .filter-chip {
   display:inline-flex;
   align-items:center;
@@ -201,14 +211,54 @@ button:hover { background:#f0f0f0; }
   border-color:#9cc2ff;
 }
 
+/* Citation suggestions */
+.cite {
+  margin-top:10px;
+  border-top:1px dashed #eee;
+  padding-top:8px;
+}
+.cite .cite-toggle {
+  font-size:12px;
+  padding:6px 8px;
+  border:1px solid #ddd;
+  background:#fafafa;
+  border-radius:4px;
+  cursor:pointer;
+}
+.cite .cite-toggle:hover { background:#f0f0f0; }
+.cite-panel {
+  margin-top:8px;
+  padding:10px;
+  background:#fbfbfb;
+  border:1px solid #eee;
+  border-radius:6px;
+  font-size:13px;
+}
+.cite-panel[hidden] { display:none; }
+.cite-style { font-weight:600; margin:8px 0 4px; }
+.cite-entry {
+  display:flex;
+  align-items:flex-start;
+  gap:8px;
+  margin:4px 0;
+}
+.cite-text { flex:1 1 auto; }
+.btn-copy {
+  flex:0 0 auto;
+  font-size:12px;
+  padding:4px 6px;
+  border:1px solid #ddd;
+  background:#f6f6f6;
+  border-radius:4px;
+  cursor:pointer;
+}
+.btn-copy:hover { background:#ededed; }
+
 /* Links */
 a { color:#0645ad; text-decoration:none; }
 a:hover { text-decoration:underline; }
 
-/* Citation suggestions */
-.cite-toggle {
-  margin-top:8px;
+/* Narrow screens */
+@media (max-width: 360px) {
+  #results { grid-template-columns: 1fr; padding: 12px; }
 }
-.cite-panel {
-  margin-top:8px;
- 
