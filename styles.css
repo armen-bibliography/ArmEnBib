@@ -89,6 +89,36 @@ button:hover { background:#f0f0f0; }
 .badges { display:flex; flex-wrap:wrap; gap:6px; margin-top:8px; }
 .badge { font-size:12px; padding:2px 6px; background:#f0f6ff; border:1px solid #d0e3ff; border-radius:999px; }
 
+/* Clickable chips (for authors, editors, translators, type, language, place, tags) */
+.filter-chip {
+  display:inline-flex;
+  align-items:center;
+  gap:4px;
+  padding:2px 6px;
+  margin:0 2px;
+  font-size:12px;
+  line-height:1.4;
+  background:#f6f6f6;
+  border:1px solid #e2e2e2;
+  border-radius:999px;
+  cursor:pointer;
+  user-select:none;
+  color:#222;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.filter-chip:hover {
+  background:#ededed;
+  border-color:#d5d5d5;
+}
+.badge.filter-chip {
+  background:#f0f6ff;
+  border-color:#d0e3ff;
+}
+.badge.filter-chip:hover {
+  background:#e6f0ff;
+  border-color:#c2d9ff;
+}
+
 a { color:#0645ad; text-decoration:none; }
 a:hover { text-decoration:underline; }
 
