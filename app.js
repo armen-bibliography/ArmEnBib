@@ -45,6 +45,12 @@ function escapeHTML(s) {
 function escapeAttr(s) {
   return String(s).replace(/"/g, '&quot;');
 }
+function canonicalPlace(s) {
+  // Return content inside brackets if present, else the whole string
+  if (!s) return '';
+  const m = s.match(/\[([^\]]+)\]/);
+  return (m ? m[1] : s).trim();
+}
 
 let RAW = [];
 let VIEW = [];
@@ -230,19 +236,17 @@ fetch(DATA_URL)
     buildFilters(VIEW);
     render(VIEW);
     bindEvents();
+    initMap();
+    updateMap(VIEW);
   })
   .catch(err => {
     document.getElementById('results').innerHTML = '<div class="card">Error: ' + (err && err.message ? err.message : err) + '</div>';
   });
 
+// Build full option lists from items
 function buildFilters(items) {
-  OPTIONS.authors = uniqueSorted(items.flatMap(x => x.authors));
-  OPTIONS.editors = uniqueSorted(items.flatMap(x => x.editors));
-  OPTIONS.translators = uniqueSorted(items.flatMap(x => x.translators));
-  OPTIONS.languages = uniqueSorted(items.map(x => x.language));
-  OPTIONS.places = uniqueSorted(items.map(x => x.place));
-  OPTIONS.types = uniqueSorted(items.map(x => x.type));
-  OPTIONS.tags = uniqueSorted(items.flatMap(x => x.tags));
+  const sets = computeOptionSets(items);
+  OPTIONS = sets;
 
   TOKENS.authors = new Map(OPTIONS.authors.map(v => [v, extractTokens(v)]));
   TOKENS.editors = new Map(OPTIONS.editors.map(v => [v, extractTokens(v)]));
@@ -252,6 +256,7 @@ function buildFilters(items) {
   TOKENS.types = new Map(OPTIONS.types.map(v => [v, extractTokens(v)]));
   TOKENS.tags = new Map(OPTIONS.tags.map(v => [v, extractTokens(v)]));
 
+  // Populate selects according to current search inputs
   filterAndFill('f-authors', OPTIONS.authors, getSearch('s-authors'), 'authors');
   filterAndFill('f-editors', OPTIONS.editors, getSearch('s-editors'), 'editors');
   filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'), 'translators');
@@ -260,12 +265,24 @@ function buildFilters(items) {
   filterAndFill('f-type', OPTIONS.types, getSearch('s-type'), 'types');
   filterAndFill('f-tags', OPTIONS.tags, getSearch('s-tags'), 'tags');
 }
+function computeOptionSets(items) {
+  return {
+    authors: uniqueSorted(items.flatMap(x => x.authors)),
+    editors: uniqueSorted(items.flatMap(x => x.editors)),
+    translators: uniqueSorted(items.flatMap(x => x.translators)),
+    languages: uniqueSorted(items.map(x => x.language)),
+    places: uniqueSorted(items.map(x => x.place)),
+    types: uniqueSorted(items.map(x => x.type)),
+    tags: uniqueSorted(items.flatMap(x => x.tags))
+  };
+}
 
 function getSearch(id) {
   const el = document.getElementById(id);
   return el ? el.value : '';
 }
 
+// Keep selection where still visible; drop those that are not in new options
 function filterAndFill(selectId, allValues, query, key) {
   const el = document.getElementById(selectId);
   const prevSelected = new Set(Array.from(el.selectedOptions).map(o => o.value));
@@ -299,7 +316,13 @@ function bindEvents() {
   ];
   searchMap.forEach(([sId, fId, key]) => {
     const sEl = document.getElementById(sId);
-    if (sEl) sEl.addEventListener('input', () => filterAndFill(fId, OPTIONS[key], sEl.value, key));
+    if (sEl) sEl.addEventListener('input', () => {
+      // Filter choices by search within CURRENTLY FILTERED subset
+      const currentItems = currentFilteredItems();
+      const sets = computeOptionSets(currentItems);
+      const allowed = sets[{authors:'authors',editors:'editors',translators:'translators',languages:'languages',places:'places',types:'types',tags:'tags'}[key]];
+      filterAndFill(fId, allowed, sEl.value, key);
+    });
   });
 
   // Apply filters when selections or year inputs change
@@ -323,11 +346,18 @@ function bindEvents() {
       language: 'f-language',
       place: 'f-place',
       type: 'f-type',
-      tags: 'f-tags'
+      tags: 'f-tags',
+      year: 'f-year-exact'
     };
     const selId = map[key];
     if (!selId) return;
-    toggleSelectValue(selId, val); // toggles selection
+    if (selId === 'f-year-exact') {
+      const yEl = document.getElementById('f-year-exact');
+      if (yEl.value === String(val)) yEl.value = '';
+      else yEl.value = String(val);
+    } else {
+      toggleSelectValue(selId, val); // toggles selection
+    }
     applyFilters();
   });
 
@@ -352,7 +382,6 @@ function enableToggleMulti(id) {
 function toggleSelectValue(selectId, value) {
   const sel = document.getElementById(selectId);
   if (!sel) return;
-  // ensure option exists; if not, add it temporarily
   let opt = Array.from(sel.options).find(o => o.value === value);
   if (!opt) {
     opt = document.createElement('option');
@@ -368,7 +397,8 @@ function getMultiSelectValues(id) {
   return Array.from(sel.selectedOptions).map(o => o.value);
 }
 
-function applyFilters() {
+// Compute filtered items based on current selections (without recomputing options yet)
+function currentFilteredItems() {
   const selAuthors = getMultiSelectValues('f-authors');
   const selEditors = getMultiSelectValues('f-editors');
   const selTranslators = getMultiSelectValues('f-translators');
@@ -380,14 +410,13 @@ function applyFilters() {
   const yearMin = document.getElementById('f-year-min').value.trim();
   const yearMax = document.getElementById('f-year-max').value.trim();
 
-  const filtered = VIEW.filter(it => {
+  return VIEW.filter(it => {
     if (selAuthors.length && !selAuthors.some(v => it.authors.includes(v))) return false;
     if (selEditors.length && !selEditors.some(v => it.editors.includes(v))) return false;
     if (selTranslators.length && !selTranslators.some(v => it.translators.includes(v))) return false;
     if (selLangs.length && !selLangs.includes(it.language)) return false;
     if (selPlaces.length && !selPlaces.includes(it.place)) return false;
     if (selTypes.length && !selTypes.includes(it.type)) return false;
-    // Tags: AND logic for all selected tags
     if (selTags.length && !selTags.every(v => it.tags.includes(v))) return false;
 
     const y = (it.year !== null && it.year !== undefined) ? Number(it.year) : null;
@@ -399,8 +428,23 @@ function applyFilters() {
     }
     return true;
   });
+}
+
+function applyFilters() {
+  const filtered = currentFilteredItems();
+
+  // Update dependent option lists based on the currently filtered items
+  const sets = computeOptionSets(filtered);
+  filterAndFill('f-authors', sets.authors, getSearch('s-authors'), 'authors');
+  filterAndFill('f-editors', sets.editors, getSearch('s-editors'), 'editors');
+  filterAndFill('f-translators', sets.translators, getSearch('s-translators'), 'translators');
+  filterAndFill('f-language', sets.languages, getSearch('s-language'), 'languages');
+  filterAndFill('f-place', sets.places, getSearch('s-place'), 'places');
+  filterAndFill('f-type', sets.types, getSearch('s-type'), 'types');
+  filterAndFill('f-tags', sets.tags, getSearch('s-tags'), 'tags');
 
   render(filtered);
+  updateMap(filtered);
 }
 
 function clearFilters() {
@@ -408,14 +452,14 @@ function clearFilters() {
     const el = document.getElementById(id);
     if (el) el.value = '';
   });
-  buildFilters(VIEW);
-
   ['f-authors','f-editors','f-translators','f-language','f-place','f-type','f-tags'].forEach(id => {
     const el = document.getElementById(id);
     Array.from(el.options).forEach(o => o.selected = false);
   });
   ['f-year-exact','f-year-min','f-year-max'].forEach(id => document.getElementById(id).value = '');
+  buildFilters(VIEW);
   render(VIEW);
+  updateMap(VIEW);
 }
 
 function chips(values, key) {
@@ -436,14 +480,13 @@ function render(items) {
   const html = items.map(it => {
     const hTitle = it.title ? `<div class="title">${escapeHTML(it.title)}</div>` : '';
 
-    // Build clickable chips for people and fields
     const authorsLine = it.authors.length ? `Authors: ${chips(it.authors, 'authors')}` : '';
     const editorsLine = it.editors.length ? `Editors: ${chips(it.editors, 'editors')}` : '';
     const translatorsLine = it.translators.length ? `Translators: ${chips(it.translators, 'translators')}` : '';
     const typeLine = it.type ? `Type: ${chips([it.type], 'type')}` : '';
     const langLine = it.language ? `Language: ${chips([it.language], 'language')}` : '';
     const placeLine = it.place ? `Place: ${chips([it.place], 'place')}` : '';
-    const yearLine = (it.year !== null && it.year !== undefined) ? `Year: ${escapeHTML(String(it.year))}` : '';
+    const yearLine = (it.year !== null && it.year !== undefined) ? `Year: ${chips([String(it.year)], 'year')}` : '';
 
     const hMeta = [authorsLine, editorsLine, translatorsLine, typeLine, langLine, placeLine, yearLine]
       .filter(Boolean)
@@ -464,4 +507,80 @@ function render(items) {
   }).join('');
 
   container.innerHTML = html;
+}
+
+/* ========= Map (Leaflet) ========= */
+let map, markersLayer;
+
+function initMap() {
+  const mapEl = document.getElementById('map');
+  if (!mapEl) return;
+  map = L.map('map', { scrollWheelZoom: true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+  markersLayer = L.layerGroup().addTo(map);
+  map.setView([40.3, 45.3], 6); // Rough center around Armenia
+}
+
+function updateMap(items) {
+  if (!map || !markersLayer) return;
+  markersLayer.clearLayers();
+
+  // Aggregate by canonical place
+  const byPlace = new Map();
+  items.forEach(it => {
+    if (!it.place) return;
+    const canon = canonicalPlace(it.place);
+    if (!canon) return;
+    if (!byPlace.has(canon)) byPlace.set(canon, { label: canon, items: [] });
+    byPlace.get(canon).items.push(it);
+  });
+
+  const bounds = [];
+  const promises = [];
+
+  byPlace.forEach((obj, place) => {
+    const p = geocode(place).then(coord => {
+      if (!coord) return;
+      const count = obj.items.length;
+      const sample = obj.items.slice(0, 5).map(x => `• ${escapeHTML(x.title)}`).join('<br>');
+      const popup = `<strong>${escapeHTML(place)}</strong><br>${count} item(s)<br>${sample}${obj.items.length>5?'<br>…':''}`;
+      const marker = L.marker([coord.lat, coord.lon]).bindPopup(popup);
+      markersLayer.addLayer(marker);
+      bounds.push([coord.lat, coord.lon]);
+    }).catch(() => {});
+    promises.push(p);
+  });
+
+  Promise.all(promises).then(() => {
+    if (bounds.length) {
+      map.fitBounds(bounds, { padding: [20, 20] });
+    }
+  });
+}
+
+function geocode(place) {
+  const key = 'geo:' + place.toLowerCase();
+  const cached = localStorage.getItem(key);
+  if (cached) {
+    try {
+      const obj = JSON.parse(cached);
+      if (obj && typeof obj.lat === 'number' && typeof obj.lon === 'number') {
+        return Promise.resolve(obj);
+      }
+    } catch (_) {}
+  }
+  const url = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(place);
+  return fetch(url, { headers: { 'Accept': 'application/json' }})
+    .then(r => r.json())
+    .then(arr => {
+      if (Array.isArray(arr) && arr[0]) {
+        const coord = { lat: parseFloat(arr[0].lat), lon: parseFloat(arr[0].lon) };
+        localStorage.setItem(key, JSON.stringify(coord));
+        return coord;
+      }
+      return null;
+    })
+    .catch(() => null);
 }
