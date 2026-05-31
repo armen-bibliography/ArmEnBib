@@ -309,7 +309,7 @@ function buildFilters(items) {
   filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'), 'translators');
   filterAndFill('f-language', OPTIONS.languages, getSearch('s-language'), 'languages');
   filterAndFill('f-place', OPTIONS.places, getSearch('s-place'), 'places');
-  filterAndFill('f-type', OPTIONS.types, getSearch('f-type', OPTIONS.types, getSearch('s-type'), 'types');
+  filterAndFill('f-type', OPTIONS.types, getSearch('s-type'), 'types');
   filterAndFill('f-tags', OPTIONS.tags, getSearch('s-tags'), 'tags');
   filterAndFill('f-publication', OPTIONS.publications, getSearch('s-publication'), 'publications');
   filterAndFill('f-publisher', OPTIONS.publishers, getSearch('s-publisher'), 'publishers');
