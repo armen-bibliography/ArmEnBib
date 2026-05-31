@@ -568,4 +568,251 @@ function render(items) {
     const pagesLine = it.pages ? `Pages: ${escapeHTML(it.pages)}` : '';
     const catalogLine = it.libraryCatalog ? `Library catalog: ${escapeHTML(it.libraryCatalog)}` : '';
 
-    const hMeta = [authorsLine, editorsLine, translatorsLine, typeLine, langLine
+    const hMeta = [authorsLine, editorsLine, translatorsLine, typeLine, langLine, placeLine, yearLine, pubNameLine, containerLine, pagesLine, catalogLine]
+      .filter(Boolean)
+      .map(x => `<div class="meta">${x}</div>`).join('');
+
+    const badges = (it.tags || []).map(t => `<span class="badge filter-chip" data-filter="tags" data-value="${escapeAttr(t)}">${escapeHTML(t)}</span>`).join('');
+
+    const links = [
+      it.url ? `<a href="${escapeAttr(it.url)}" target="_blank" rel="noopener">Link</a>` : ''
+    ].filter(Boolean).join(' | ');
+
+    const citePanel = `
+      <div class="cite">
+        <button class="cite-toggle" type="button" data-cite-key="${escapeAttr(it.key || '')}">Show citation suggestions</button>
+        <div class="cite-panel" hidden data-cite-panel="${escapeAttr(it.key || '')}">
+          ${renderCitations(it)}
+        </div>
+      </div>`;
+
+    return `<div class="card">
+      ${hTitle}
+      ${hMeta}
+      ${badges ? `<div class="badges">${badges}</div>` : ''}
+      ${links ? `<div class="meta">${links}</div>` : ''}
+      ${citePanel}
+    </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+
+  // Bind citation toggles
+  container.querySelectorAll('.cite-toggle').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.getAttribute('data-cite-key') || '';
+      const panel = container.querySelector(`.cite-panel[data-cite-panel="${CSS.escape(key)}"]`);
+      if (!panel) return;
+      const isHidden = panel.hasAttribute('hidden');
+      if (isHidden) {
+        panel.removeAttribute('hidden');
+        btn.textContent = 'Hide citation suggestions';
+      } else {
+        panel.setAttribute('hidden', '');
+        btn.textContent = 'Show citation suggestions';
+      }
+    });
+  });
+
+  // Bind copy buttons
+  container.querySelectorAll('.btn-copy').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const text = btn.getAttribute('data-copy') || '';
+      navigator.clipboard.writeText(text).then(() => {
+        btn.textContent = 'Copied';
+        setTimeout(() => btn.textContent = 'Copy', 1200);
+      }).catch(() => {});
+    });
+  });
+
+  renderActiveFilters();
+}
+
+/* ========= Active filters ========= */
+function renderActiveFilters() {
+  const bar = document.getElementById('active-filters');
+
+  const af = [];
+  const map = [
+    ['authors','f-authors'],
+    ['editors','f-editors'],
+    ['translators','f-translators'],
+    ['language','f-language'],
+    ['place','f-place'],
+    ['type','f-type'],
+    ['tags','f-tags'],
+    ['publication','f-publication'],
+    ['publisher','f-publisher']
+  ];
+  map.forEach(([key, selId]) => {
+    const vals = getMultiSelectValues(selId);
+    vals.forEach(v => af.push({key, val: v}));
+  });
+
+  const yExact = document.getElementById('f-year-exact').value.trim();
+  const yMin = document.getElementById('f-year-min').value.trim();
+  const yMax = document.getElementById('f-year-max').value.trim();
+  if (yExact) af.push({key:'year-exact', val: yExact});
+  if (yMin || yMax) af.push({key:'year-range', val: `${yMin || '…'}–${yMax || '…'}`});
+
+  if (!af.length) {
+    bar.setAttribute('hidden','');
+    bar.innerHTML = '';
+    return;
+  }
+
+  bar.removeAttribute('hidden');
+  const html = af.map(x => {
+    const label = `${x.key}: ${x.val}`;
+    return `<span class="active-chip" data-filter="${escapeAttr(x.key)}" data-value="${escapeAttr(x.val)}">
+      ${escapeHTML(label)} <span class="x" title="Remove">×</span>
+    </span>`;
+  }).join('') + `<button id="af-clear-all" class="clear-all" type="button">Clear all</button>`;
+  bar.innerHTML = html;
+}
+
+function removeFilterChip(key, val) {
+  const map = {
+    authors: 'f-authors',
+    editors: 'f-editors',
+    translators: 'f-translators',
+    language: 'f-language',
+    place: 'f-place',
+    type: 'f-type',
+    tags: 'f-tags',
+    publication: 'f-publication',
+    publisher: 'f-publisher'
+  };
+  if (key === 'year-exact') {
+    document.getElementById('f-year-exact').value = '';
+  } else if (key === 'year-range') {
+    document.getElementById('f-year-min').value = '';
+    document.getElementById('f-year-max').value = '';
+  } else if (map[key]) {
+    const sel = document.getElementById(map[key]);
+    const opt = Array.from(sel.options).find(o => o.value === val);
+    if (opt) opt.selected = false;
+  }
+  applyFilters();
+}
+
+/* ========= Citation suggestions ========= */
+/* Armenian transliteration map (HBM) */
+const ARM_HBM = {
+  "Ա":"A","ա":"a","Բ":"B","բ":"b","Գ":"G","գ":"g","Դ":"D","դ":"d","Ե":"E","ե":"e",
+  "Զ":"Z","զ":"z","Է":"Ē","է":"ē","Ը":"Ə","ը":"ə","Թ":"Tʿ","թ":"tʿ","Ժ":"Ž","ժ":"ž",
+  "Ի":"I","ի":"i","Լ":"L","լ":"l","Խ":"X","խ":"x","Ծ":"C","ծ":"c","Կ":"K","կ":"k",
+  "Հ":"H","հ":"h","Ձ":"J","ձ":"j","Ղ":"Ł","ղ":"ł","Ճ":"Č","ճ":"č","Մ":"M","մ":"m",
+  "Յ":"Y","յ":"y","Ն":"N","ն":"n","Շ":"Š","շ":"š","Ո":"O","ո":"o","Չ":"Čʿ","չ":"čʿ",
+  "Պ":"P","պ":"p","Ջ":"ǰ","ջ":"ǰ","Ռ":"Ṙ","ռ":"ṙ","Ս":"S","ս":"s","Վ":"V","վ":"v",
+  "Տ":"T","տ":"t","Ր":"R","ր":"r","Ց":"Cʿ","ց":"cʿ","Ւ":"W","ւ":"w","Փ":"Pʿ","փ":"pʿ",
+  "Ք":"Kʿ","ք":"kʿ","Օ":"Ō","օ":"ō","Ֆ":"F","ֆ":"f","և":"ew"
+};
+function transliterateHBM(str) {
+  if (!str) return '';
+  let out = '';
+  for (const ch of str) out += (ARM_HBM[ch] !== undefined) ? ARM_HBM[ch] : ch;
+  return out;
+}
+function hasArmenian(s) { return /[\u0530-\u058F]/.test(s || ''); }
+function needsArmenianVariants(lang) {
+  const f = fold(lang || '');
+  return hasArmenian(lang) || f.includes('armenian') || f.includes('hye') || f.includes('հայ');
+}
+function joinPersonsPlain(arr) {
+  if (!arr || !arr.length) return '';
+  // RDF produced "Surname, Given"; convert to "Surname Given"
+  return arr.map(n => {
+    const parts = n.split(',').map(x => x.trim());
+    if (parts.length === 2) return `${parts[0]} ${parts[1]}`;
+    return n;
+  }).join('; ');
+}
+function translitIfDiff(txt) {
+  const t = transliterateHBM(txt || '');
+  return (t && t !== txt) ? t : null;
+}
+function qArm(s) { return `«${s}»`; }
+function qEng(s) { return `“${s}”`; }
+
+function buildChicago(it, variant) {
+  const isArm = needsArmenianVariants(it.language);
+  const persons = joinPersonsPlain(it.authors.length ? it.authors : it.editors);
+  const tRaw = it.title || '';
+  const contRaw = it.containerTitle || '';
+  const placeRaw = it.place || '';
+  const pubRaw = it.publisherName || '';
+  const y = it.year ? String(it.year) : '';
+  const pagesTxt = it.pages ? `, ${it.pages}` : '';
+
+  const nameA = persons;
+  const nameB = isArm && variant==='b'
+    ? persons + (translitIfDiff(persons) ? ` [${translitIfDiff(persons)}]` : '')
+    : (variant==='c' ? transliterateHBM(persons) : persons);
+
+  const titleA = isArm && variant!=='c' ? qArm(tRaw) : qEng(transliterateHBM(tRaw));
+  const titleB = (variant==='b' && isArm)
+    ? `${qArm(tRaw)}${translitIfDiff(tRaw) ? ` [${qEng(transliterateHBM(tRaw))}]` : ''}`
+    : (variant==='c' ? qEng(transliterateHBM(tRaw)) : qArm(tRaw));
+
+  const contA = isArm && variant!=='c' ? contRaw : transliterateHBM(contRaw);
+  const contB = (variant==='b' && isArm)
+    ? `${contRaw}${translitIfDiff(contRaw) ? ` [${transliterateHBM(contRaw)}]` : ''}`
+    : (variant==='c' ? transliterateHBM(contRaw) : contRaw);
+
+  const placeA = isArm && variant!=='c' ? placeRaw : transliterateHBM(placeRaw);
+  const placeB = (variant==='b' && isArm)
+    ? `${placeRaw}${translitIfDiff(placeRaw) ? ` [${transliterateHBM(placeRaw)}]` : ''}`
+    : (variant==='c' ? transliterateHBM(placeRaw) : placeRaw);
+
+  const pubA = isArm && variant!=='c' ? pubRaw : transliterateHBM(pubRaw);
+  const pubB = (variant==='b' && isArm)
+    ? `${pubRaw}${translitIfDiff(pubRaw) ? ` [${transliterateHBM(pubRaw)}]` : ''}`
+    : (variant==='c' ? transliterateHBM(pubRaw) : pubRaw);
+
+  const name = (variant==='a') ? nameA : (variant==='b' ? nameB : transliterateHBM(persons));
+  const title = (variant==='a') ? titleA : (variant==='b' ? titleB : qEng(transliterateHBM(tRaw)));
+  const cont = (variant==='a') ? contA : (variant==='b' ? contB : transliterateHBM(contRaw));
+  const place = (variant==='a') ? placeA : (variant==='b' ? placeB : transliterateHBM(placeRaw));
+  const pub = (variant==='a') ? pubA : (variant==='b' ? pubB : transliterateHBM(pubRaw));
+
+  // Format: Name. “Title.” (Place: Publisher, Year), pages.
+  const paren = (place || pub || y) ? ` (${[place, pub].filter(Boolean).join(': ')}, ${y})` : '';
+  const bits = [];
+  if (name) bits.push(name + '.');
+  if (title) bits.push(title + '.');
+  bits.push(`${paren}${pagesTxt}.`);
+  if (cont) bits.splice(2, 0, `${cont}.`); // if there is a container, place it before paren
+  return bits.join(' ').replace(/\s+/g,' ').trim();
+}
+
+function buildAPA(it, variant) {
+  const isArm = needsArmenianVariants(it.language);
+  const persons = joinPersonsPlain(it.authors.length ? it.authors : it.editors);
+  const tRaw = it.title || '';
+  const contRaw = it.containerTitle || '';
+  const placeRaw = it.place || '';
+  const pubRaw = it.publisherName || '';
+  const y = it.year ? `(${it.year}).` : '(n.d.).';
+  const pagesTxt = it.pages ? `, ${it.pages}` : '';
+
+  const nameB = isArm && variant==='b'
+    ? persons + (translitIfDiff(persons) ? ` [${transliterateHBM(persons)}]` : '')
+    : (variant==='c' ? transliterateHBM(persons) : persons);
+  const titleB = (variant==='b' && isArm)
+    ? `${tRaw}${translitIfDiff(tRaw) ? ` [${transliterateHBM(tRaw)}]` : ''}`
+    : (variant==='c' ? transliterateHBM(tRaw) : tRaw);
+  const contB = (variant==='b' && isArm)
+    ? `${contRaw}${translitIfDiff(contRaw) ? ` [${transliterateHBM(contRaw)}]` : ''}`
+    : (variant==='c' ? transliterateHBM(contRaw) : contRaw);
+  const placeB = (variant==='b' && isArm)
+    ? `${placeRaw}${translitIfDiff(placeRaw) ? ` [${transliterateHBM(placeRaw)}]` : ''}`
+    : (variant==='c' ? transliterateHBM(placeRaw) : placeRaw);
+  const pubB = (variant==='b' && isArm)
+    ? `${pubRaw}${translitIfDiff(pubRaw) ? ` [${transliterateHBM(pubRaw)}]` : ''}`
+    : (variant==='c' ? transliterateHBM(pubRaw) : pubRaw);
+
+  const name = (variant==='a') ? persons : nameB;
+  const title = (variant==='a') ? tRaw : titleB;
+  const cont = (variant==='a') ? contRaw : contB;
+  const
