@@ -30,12 +30,42 @@ function getTags(it) {
 function getPlace(it) {
   return it['publisher-place'] || it['event-place'] || it['jurisdiction'] || it['original-publisher-place'] || null;
 }
-// Accent/case-insensitive folding
+
+// Fold for case/diacritic-insensitive comparison (keeps non-Latin scripts as-is)
 function fold(s) {
   return String(s || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
+}
+
+// Extract tokens from a label: split family/given, spaces, commas, and include bracketed variants
+function extractTokens(label) {
+  if (!label) return [];
+  const tokens = new Set();
+  const add = (t) => {
+    const f = fold(t).trim();
+    if (f) tokens.add(f);
+  };
+
+  // Take full label
+  add(label);
+
+  // Extract bracketed content (e.g., "Աբեղյան [Abełyan]" -> "Abełyan")
+  const bracketMatches = Array.from(label.matchAll(/\[([^\]]+)\]/g));
+  bracketMatches.forEach(m => add(m[1]));
+
+  // Remove bracket parts to tokenize base separately
+  const base = label.replace(/\[[^\]]*\]/g, ' ');
+
+  // Split by common separators
+  const parts = base.split(/[\s,;:/()]+/g).filter(Boolean);
+  parts.forEach(add);
+
+  // Also split on hyphens and apostrophes within parts
+  parts.forEach(p => p.split(/[-'’]+/g).forEach(add));
+
+  return Array.from(tokens);
 }
 
 let RAW = [];
@@ -48,6 +78,16 @@ let OPTIONS = {
   places: [],
   types: [],
   tags: []
+};
+// Token maps to support search by any word/variant present in the label
+let TOKENS = {
+  authors: new Map(),
+  editors: new Map(),
+  translators: new Map(),
+  languages: new Map(),
+  places: new Map(),
+  types: new Map(),
+  tags: new Map()
 };
 
 // Load data and initialize
@@ -90,13 +130,22 @@ function buildFilters(items) {
   OPTIONS.types = uniqueSorted(items.map(x => x.type));
   OPTIONS.tags = uniqueSorted(items.flatMap(x => x.tags));
 
-  filterAndFill('f-authors', OPTIONS.authors, getSearch('s-authors'));
-  filterAndFill('f-editors', OPTIONS.editors, getSearch('s-editors'));
-  filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'));
-  filterAndFill('f-language', OPTIONS.languages, getSearch('s-language'));
-  filterAndFill('f-place', OPTIONS.places, getSearch('s-place'));
-  filterAndFill('f-type', OPTIONS.types, getSearch('s-type'));
-  filterAndFill('f-tags', OPTIONS.tags, getSearch('s-tags'));
+  // Build token maps
+  TOKENS.authors = new Map(OPTIONS.authors.map(v => [v, extractTokens(v)]));
+  TOKENS.editors = new Map(OPTIONS.editors.map(v => [v, extractTokens(v)]));
+  TOKENS.translators = new Map(OPTIONS.translators.map(v => [v, extractTokens(v)]));
+  TOKENS.languages = new Map(OPTIONS.languages.map(v => [v, extractTokens(v)]));
+  TOKENS.places = new Map(OPTIONS.places.map(v => [v, extractTokens(v)]));
+  TOKENS.types = new Map(OPTIONS.types.map(v => [v, extractTokens(v)]));
+  TOKENS.tags = new Map(OPTIONS.tags.map(v => [v, extractTokens(v)]));
+
+  filterAndFill('f-authors', OPTIONS.authors, getSearch('s-authors'), 'authors');
+  filterAndFill('f-editors', OPTIONS.editors, getSearch('s-editors'), 'editors');
+  filterAndFill('f-translators', OPTIONS.translators, getSearch('s-translators'), 'translators');
+  filterAndFill('f-language', OPTIONS.languages, getSearch('s-language'), 'languages');
+  filterAndFill('f-place', OPTIONS.places, getSearch('s-place'), 'places');
+  filterAndFill('f-type', OPTIONS.types, getSearch('s-type'), 'types');
+  filterAndFill('f-tags', OPTIONS.tags, getSearch('s-tags'), 'tags');
 }
 
 function getSearch(id) {
@@ -104,12 +153,19 @@ function getSearch(id) {
   return el ? el.value : '';
 }
 
-// Populate a <select> based on a query; show only values that START WITH the query (case/diacritic-insensitive)
-function filterAndFill(selectId, allValues, query) {
+// Populate a <select> based on a query; show only values that START WITH the query
+// Match against ANY extracted token from the label (original words, family/given, bracketed variants)
+function filterAndFill(selectId, allValues, query, key) {
   const el = document.getElementById(selectId);
   const prevSelected = new Set(Array.from(el.selectedOptions).map(o => o.value));
   const q = fold(query || '');
-  const vals = q === '' ? allValues : allValues.filter(v => fold(v).startsWith(q));
+  const vals = q === ''
+    ? allValues
+    : allValues.filter(v => {
+        const toks = TOKENS[key].get(v) || [];
+        return toks.some(tok => tok.startsWith(q));
+      });
+
   el.innerHTML = '';
   vals.forEach(v => {
     const opt = document.createElement('option');
@@ -133,7 +189,7 @@ function bindEvents() {
   ];
   searchMap.forEach(([sId, fId, key]) => {
     const sEl = document.getElementById(sId);
-    if (sEl) sEl.addEventListener('input', () => filterAndFill(fId, OPTIONS[key], sEl.value));
+    if (sEl) sEl.addEventListener('input', () => filterAndFill(fId, OPTIONS[key], sEl.value, key));
   });
 
   // Apply item filters when selections or year inputs change
