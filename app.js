@@ -47,8 +47,14 @@ function escapeAttr(s) {
 }
 function canonicalPlace(s) {
   if (!s) return '';
+
   const m = s.match(/\[([^\]]+)\]/);
-  return (m ? m[1] : s).trim();
+
+  if (m) {
+    return m[1].trim();
+  }
+
+  return s.trim();
 }
 
 /* ========= State ========= */
@@ -945,34 +951,59 @@ function ensureMap() {
   }
 }
 
-function updateMap(items) {
+async function updateMap(items) {
   if (!map) return;
-  // aggregate by canonical place label
+
+  placeMarkers.forEach(m => map.removeLayer(m));
+  placeMarkers.clear();
+
   const counts = new Map();
+
   items.forEach(it => {
     const p = canonicalPlace(it.place);
     if (!p) return;
     counts.set(p, (counts.get(p) || 0) + 1);
   });
 
-  // Remove old markers
-  placeMarkers.forEach(m => map.removeLayer(m));
-  placeMarkers.clear();
+  for (const [place, cnt] of counts.entries()) {
 
-  // Try to place markers for places we have cached coordinates for
-  // You can prefill PLACE_COORDS_CACHE.set('Yerevan', [40.1772, 44.50349]) etc.
-  counts.forEach((cnt, place) => {
-    const coords = PLACE_COORDS_CACHE.get(place);
-    if (!coords) return; // skip unknown coords
-    const marker = L.marker(coords).addTo(map).bindPopup(`${place}: ${cnt}`);
+    let coords = PLACE_COORDS_CACHE.get(place);
+
+    if (!coords) {
+      try {
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(place)}`
+        );
+
+        const results = await response.json();
+
+        if (results.length) {
+          coords = [
+            parseFloat(results[0].lat),
+            parseFloat(results[0].lon)
+          ];
+
+          PLACE_COORDS_CACHE.set(place, coords);
+        }
+      } catch (err) {
+        console.error("Geocoding failed:", place, err);
+      }
+    }
+
+    if (!coords) continue;
+
+    const marker = L.marker(coords)
+      .addTo(map)
+      .bindPopup(`${place}: ${cnt}`);
+
     placeMarkers.set(place, marker);
-  });
+  }
 
-  // Fit to markers if any
-  const latlngs = Array.from(placeMarkers.values()).map(m => m.getLatLng());
+  const latlngs = Array.from(placeMarkers.values())
+    .map(m => m.getLatLng());
+
   if (latlngs.length) {
-    const bounds = L.latLngBounds(latlngs);
-    map.fitBounds(bounds.pad(0.2));
+    map.fitBounds(L.latLngBounds(latlngs).pad(0.2));
   }
 }
 
