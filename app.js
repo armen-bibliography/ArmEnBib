@@ -786,39 +786,6 @@ function buildChicago(it, variant) {
   return bits.join(' ').replace(/\s+/g,' ').trim();
 }
 
-function buildAPA(it, variant) {
-  const isArm = needsArmenianVariants(it.language);
-  const persons = joinPersonsPlain(it.authors.length ? it.authors : it.editors);
-  const tRaw = it.title || '';
-  const contRaw = it.containerTitle || '';
-  const placeRaw = it.place || '';
-  const pubRaw = it.publisherName || '';
-  const y = it.year ? `(${it.year}).` : '(n.d.).';
-  const pagesTxt = it.pages ? `, ${it.pages}` : '';
-
-  const nameB = isArm && variant==='b'
-    ? persons + (translitIfDiff(persons) ? ` [${transliterateHBM(persons)}]` : '')
-    : (variant==='c' ? transliterateHBM(persons) : persons);
-  const titleB = (variant==='b' && isArm)
-    ? `${tRaw}${translitIfDiff(tRaw) ? ` [${transliterateHBM(tRaw)}]` : ''}`
-    : (variant==='c' ? transliterateHBM(tRaw) : tRaw);
-  const contB = (variant==='b' && isArm)
-    ? `${contRaw}${translitIfDiff(contRaw) ? ` [${transliterateHBM(contRaw)}]` : ''}`
-    : (variant==='c' ? transliterateHBM(contRaw) : contRaw);
-  const placeB = (variant==='b' && isArm)
-    ? `${placeRaw}${translitIfDiff(placeRaw) ? ` [${transliterateHBM(placeRaw)}]` : ''}`
-    : (variant==='c' ? transliterateHBM(placeRaw) : placeRaw);
-  const pubB = (variant==='b' && isArm)
-    ? `${pubRaw}${translitIfDiff(pubRaw) ? ` [${transliterateHBM(pubRaw)}]` : ''}`
-    : (variant==='c' ? transliterateHBM(pubRaw) : pubRaw);
-
-  const name = (variant==='a') ? persons : nameB;
-  const title = (variant==='a') ? tRaw : titleB;
-  const cont = (variant==='a') ? contRaw : contB;
-  
-
-const place = (variant === 'a') ? placeRaw : placeB;
-const pub = (variant === 'a') ? pubRaw : pubB;
 
 function buildAPA(it, variant) {
   const isArm = needsArmenianVariants(it.language);
