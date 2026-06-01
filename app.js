@@ -815,4 +815,207 @@ function buildAPA(it, variant) {
   const name = (variant==='a') ? persons : nameB;
   const title = (variant==='a') ? tRaw : titleB;
   const cont = (variant==='a') ? contRaw : contB;
-  const
+  
+
+const place = (variant === 'a') ? placeRaw : placeB;
+const pub = (variant === 'a') ? pubRaw : pubB;
+
+function buildAPA(it, variant) {
+  const isArm = needsArmenianVariants(it.language);
+  const persons = joinPersonsPlain(it.authors.length ? it.authors : it.editors);
+  const tRaw = it.title || '';
+  const contRaw = it.containerTitle || '';
+  const placeRaw = it.place || '';
+  const pubRaw = it.publisherName || '';
+  const y = it.year ? `(${it.year}).` : '(n.d.).';
+  const pagesTxt = it.pages ? `, ${it.pages}` : '';
+  const url = it.url || '';
+
+  const nameB = isArm && variant === 'b'
+    ? persons + (translitIfDiff(persons) ? ` [${transliterateHBM(persons)}]` : '')
+    : (variant === 'c' ? transliterateHBM(persons) : persons);
+
+  const titleB = (variant === 'b' && isArm)
+    ? `${tRaw}${translitIfDiff(tRaw) ? ` [${transliterateHBM(tRaw)}]` : ''}`
+    : (variant === 'c' ? transliterateHBM(tRaw) : tRaw);
+
+  const contB = (variant === 'b' && isArm)
+    ? `${contRaw}${translitIfDiff(contRaw) ? ` [${transliterateHBM(contRaw)}]` : ''}`
+    : (variant === 'c' ? transliterateHBM(contRaw) : contRaw);
+
+  const placeB = (variant === 'b' && isArm)
+    ? `${placeRaw}${translitIfDiff(placeRaw) ? ` [${transliterateHBM(placeRaw)}]` : ''}`
+    : (variant === 'c' ? transliterateHBM(placeRaw) : placeRaw);
+
+  const pubB = (variant === 'b' && isArm)
+    ? `${pubRaw}${translitIfDiff(pubRaw) ? ` [${transliterateHBM(pubRaw)}]` : ''}`
+    : (variant === 'c' ? transliterateHBM(pubRaw) : pubRaw);
+
+  const name = (variant === 'a') ? persons : nameB;
+  const title = (variant === 'a') ? tRaw : titleB;
+  const cont = (variant === 'a') ? contRaw : contB;
+  const place = (variant === 'a') ? placeRaw : placeB;
+  const pub = (variant === 'a') ? pubRaw : pubB;
+
+  // Simple APA-ish shaping (no italics for plain text):
+  // Article/chapter: Name. (Year). Title. Container, pages. URL
+  // Book: Name. (Year). Title. Place: Publisher. URL
+  const bits = [];
+  if (name) bits.push(`${name}.`);
+  bits.push(y);
+  if (title) bits.push(`${title}.`);
+
+  if (cont) {
+    // If it looks like an article/chapter
+    let contPart = cont;
+    if (it.pages) contPart += pagesTxt;
+    bits.push(`${contPart}.`);
+    if (place || pub) {
+      const pubPart = [place, pub].filter(Boolean).join(': ');
+      if (pubPart) bits.push(`${pubPart}.`);
+    }
+  } else {
+    // Book-like
+    if (place || pub) {
+      const pubPart = [place, pub].filter(Boolean).join(': ');
+      if (pubPart) bits.push(`${pubPart}.`);
+    }
+  }
+  if (url) bits.push(url);
+
+  return bits.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/* Render citation suggestions block */
+function renderCitations(it) {
+  const chicagoA = buildChicago(it, 'a');
+  const chicagoB = buildChicago(it, 'b');
+  const chicagoC = buildChicago(it, 'c');
+
+  const apaA = buildAPA(it, 'a');
+  const apaB = buildAPA(it, 'b');
+  const apaC = buildAPA(it, 'c');
+
+  const row = (label, text) => `
+    <div class="cite-row">
+      <div class="cite-label">${escapeHTML(label)}</div>
+      <div class="cite-text">${escapeHTML(text)}</div>
+      <button type="button" class="btn-copy" data-copy="${escapeAttr(text)}">Copy</button>
+    </div>`;
+
+  return `
+    <div class="cite-group">
+      <div class="cite-head">Chicago (notes-bibliography, plain text)</div>
+      ${row('A. Native/English as needed', chicagoA)}
+      ${row('B. Native [+ transliteration in brackets]', chicagoB)}
+      ${row('C. Transliteration only', chicagoC)}
+    </div>
+    <div class="cite-group">
+      <div class="cite-head">APA (plain text)</div>
+      ${row('A. Native/English as needed', apaA)}
+      ${row('B. Native [+ transliteration in brackets]', apaB)}
+      ${row('C. Transliteration only', apaC)}
+    </div>`;
+}
+
+/* ========= Filter option populate with search ========= */
+function getSearch(id) {
+  const el = document.getElementById(id);
+  return el ? el.value || '' : '';
+}
+
+function filterAndFill(selectId, allowedValues, search, tokenKey) {
+  const sel = document.getElementById(selectId);
+  if (!sel) return;
+  const prevSelected = new Set(Array.from(sel.selectedOptions).map(o => o.value));
+  const tokens = (search || '').trim() ? extractTokens(search) : [];
+  const tokenMap = TOKENS[tokenKey] || new Map();
+
+  let values = Array.isArray(allowedValues) ? allowedValues.slice() : [];
+  if (tokens.length) {
+    const must = tokens.map(fold);
+    values = values.filter(v => {
+      const toks = tokenMap.get(v) || extractTokens(v);
+      const folded = new Set(toks.map(fold));
+      return must.every(t => folded.has(t));
+    });
+  }
+
+  // Rebuild options
+  sel.innerHTML = '';
+  values.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = v;
+    // preserve previous selection if still present
+    opt.selected = prevSelected.has(v);
+    sel.appendChild(opt);
+  });
+}
+
+/* ========= Map handling (safe no-ops if Leaflet absent) ========= */
+let map = null;
+let placeMarkers = new Map(); // place -> marker
+const PLACE_COORDS_CACHE = new Map(); // place -> [lat, lng]
+
+function mapVisible() {
+  const panel = document.getElementById('map-panel');
+  const mapDiv = document.getElementById('map');
+  if (!panel || !mapDiv) return false;
+  return !panel.hasAttribute('hidden');
+}
+
+function ensureMap() {
+  const mapDiv = document.getElementById('map');
+  if (!mapDiv) return;
+
+  if (window.L && !map) {
+    map = L.map(mapDiv).setView([40.0, 0.0], 2);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 18,
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+  }
+}
+
+function updateMap(items) {
+  if (!map) return;
+  // aggregate by canonical place label
+  const counts = new Map();
+  items.forEach(it => {
+    const p = canonicalPlace(it.place);
+    if (!p) return;
+    counts.set(p, (counts.get(p) || 0) + 1);
+  });
+
+  // Remove old markers
+  placeMarkers.forEach(m => map.removeLayer(m));
+  placeMarkers.clear();
+
+  // Try to place markers for places we have cached coordinates for
+  // You can prefill PLACE_COORDS_CACHE.set('Yerevan', [40.1772, 44.50349]) etc.
+  counts.forEach((cnt, place) => {
+    const coords = PLACE_COORDS_CACHE.get(place);
+    if (!coords) return; // skip unknown coords
+    const marker = L.marker(coords).addTo(map).bindPopup(`${place}: ${cnt}`);
+    placeMarkers.set(place, marker);
+  });
+
+  // Fit to markers if any
+  const latlngs = Array.from(placeMarkers.values()).map(m => m.getLatLng());
+  if (latlngs.length) {
+    const bounds = L.latLngBounds(latlngs);
+    map.fitBounds(bounds.pad(0.2));
+  }
+}
+
+/* Optional: preload a few common places (adjust to your data) */
+// PLACE_COORDS_CACHE.set('Yerevan', [40.1772, 44.50349]);
+// PLACE_COORDS_CACHE.set('Tbilisi', [41.6938, 44.8015]);
+// PLACE_COORDS_CACHE.set('Istanbul', [41.0082, 28.9784]);
+// PLACE_COORDS_CACHE.set('Beirut', [33.8938, 35.5018]);
+// PLACE_COORDS_CACHE.set('Moscow', [55.7558, 37.6173]);
+// PLACE_COORDS_CACHE.set('Paris', [48.8566, 2.3522]);
+// PLACE_COORDS_CACHE.set('London', [51.5074, -0.1278]);
+
+/* ========= End ========= */
