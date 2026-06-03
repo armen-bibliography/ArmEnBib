@@ -727,16 +727,53 @@ function needsArmenianVariants(lang) {
 }
 function joinPersonsPlain(arr) {
   if (!arr || !arr.length) return '';
-  // RDF produced "Surname, Given"; convert to "Surname Given"
+
   return arr.map(n => {
     const parts = n.split(',').map(x => x.trim());
-    if (parts.length === 2) return `${parts[0]} ${parts[1]}`;
+
+    if (parts.length === 2) {
+      return `${parts[0]} ${parts[1]}`;
+    }
+
     return n;
   }).join('; ');
 }
+
+function stripBracketTranslations(txt) {
+  if (!txt) return '';
+
+  return txt.replace(/\s*\[[^\]]+\]/g, '').trim();
+}
+function splitBracketText(txt) {
+  if (!txt) return { main: '', bracket: '' };
+
+  const m = txt.match(/^(.*?)\s*\[([^\]]+)\]\s*$/);
+
+  if (!m) {
+    return {
+      main: txt.trim(),
+      bracket: ''
+    };
+  }
+
+  return {
+    main: m[1].trim(),
+    bracket: m[2].trim()
+  };
+}
+
 function translitIfDiff(txt) {
-  const t = transliterateHBM(txt || '');
-  return (t && t !== txt) ? t : null;
+  if (!txt) return null;
+
+  const parts = splitBracketText(txt);
+
+  const translit = transliterateHBM(parts.main);
+
+  if (!translit || translit === parts.bracket) {
+    return null;
+  }
+
+  return translit;
 }
 function qArm(s) { return `«${s}»`; }
 function qEng(s) { return `“${s}”`; }
@@ -744,34 +781,49 @@ function qEng(s) { return `“${s}”`; }
 function buildChicago(it, variant) {
   const isArm = needsArmenianVariants(it.language);
   const persons = joinPersonsPlain(it.authors.length ? it.authors : it.editors);
+
   const tRaw = it.title || '';
   const contRaw = it.containerTitle || '';
   const placeRaw = it.place || '';
   const pubRaw = it.publisherName || '';
+
+  const tNative = stripBracketTranslations(tRaw);
+  const contNative = stripBracketTranslations(contRaw);
+  const placeNative = stripBracketTranslations(placeRaw);
+  const pubNative = stripBracketTranslations(pubRaw);
+  const personsNative = stripBracketTranslations(persons);
   const y = it.year ? String(it.year) : '';
   const pagesTxt = it.pages ? `, ${it.pages}` : '';
 
-  const nameA = persons;
+  const nameA = personsNative;
   const nameB = isArm && variant==='b'
     ? persons + (translitIfDiff(persons) ? ` [${translitIfDiff(persons)}]` : '')
     : (variant==='c' ? transliterateHBM(persons) : persons);
 
-  const titleA = isArm && variant!=='c' ? qArm(tRaw) : qEng(transliterateHBM(tRaw));
+ const titleA = isArm && variant!=='c'
+  ? qArm(tNative)
+  : qEng(transliterateHBM(tNative));
   const titleB = (variant==='b' && isArm)
     ? `${qArm(tRaw)}${translitIfDiff(tRaw) ? ` [${qEng(transliterateHBM(tRaw))}]` : ''}`
     : (variant==='c' ? qEng(transliterateHBM(tRaw)) : qArm(tRaw));
 
-  const contA = isArm && variant!=='c' ? contRaw : transliterateHBM(contRaw);
+  const contA = isArm && variant!=='c'
+  ? contNative
+  : transliterateHBM(contNative);
   const contB = (variant==='b' && isArm)
     ? `${contRaw}${translitIfDiff(contRaw) ? ` [${transliterateHBM(contRaw)}]` : ''}`
     : (variant==='c' ? transliterateHBM(contRaw) : contRaw);
 
-  const placeA = isArm && variant!=='c' ? placeRaw : transliterateHBM(placeRaw);
+  const placeA = isArm && variant!=='c'
+  ? placeNative
+  : transliterateHBM(placeNative);
   const placeB = (variant==='b' && isArm)
     ? `${placeRaw}${translitIfDiff(placeRaw) ? ` [${transliterateHBM(placeRaw)}]` : ''}`
     : (variant==='c' ? transliterateHBM(placeRaw) : placeRaw);
 
-  const pubA = isArm && variant!=='c' ? pubRaw : transliterateHBM(pubRaw);
+ const pubA = isArm && variant!=='c'
+  ? pubNative
+  : transliterateHBM(pubNative);
   const pubB = (variant==='b' && isArm)
     ? `${pubRaw}${translitIfDiff(pubRaw) ? ` [${transliterateHBM(pubRaw)}]` : ''}`
     : (variant==='c' ? transliterateHBM(pubRaw) : pubRaw);
@@ -796,10 +848,17 @@ function buildChicago(it, variant) {
 function buildAPA(it, variant) {
   const isArm = needsArmenianVariants(it.language);
   const persons = joinPersonsPlain(it.authors.length ? it.authors : it.editors);
+
   const tRaw = it.title || '';
   const contRaw = it.containerTitle || '';
   const placeRaw = it.place || '';
   const pubRaw = it.publisherName || '';
+
+  const tNative = stripBracketTranslations(tRaw);
+  const contNative = stripBracketTranslations(contRaw);
+  const placeNative = stripBracketTranslations(placeRaw);
+  const pubNative = stripBracketTranslations(pubRaw);
+  const personsNative = stripBracketTranslations(persons);
   const y = it.year ? `(${it.year}).` : '(n.d.).';
   const pagesTxt = it.pages ? `, ${it.pages}` : '';
   const url = it.url || '';
