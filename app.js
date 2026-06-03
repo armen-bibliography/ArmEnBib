@@ -762,6 +762,17 @@ function splitBracketText(txt) {
   };
 }
 
+function normalizeTranslitCompare(s) {
+  return String(s || '')
+    .replace(/ʿ/g, "'")
+    .replace(/῾/g, "'")
+    .replace(/ʻ/g, "'")
+    .replace(/’/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
 function translitIfDiff(txt) {
   if (!txt) return null;
 
@@ -769,7 +780,12 @@ function translitIfDiff(txt) {
 
   const translit = transliterateHBM(parts.main);
 
-  if (!translit || translit === parts.bracket) {
+  if (!translit) return null;
+
+  if (
+    normalizeTranslitCompare(translit) ===
+    normalizeTranslitCompare(parts.bracket)
+  ) {
     return null;
   }
 
@@ -798,7 +814,7 @@ function buildChicago(it, variant) {
   const nameA = personsNative;
   const nameB = isArm && variant==='b'
     ? persons + (translitIfDiff(persons) ? ` [${translitIfDiff(persons)}]` : '')
-    : (variant==='c' ? transliterateHBM(persons) : persons);
+    : (variant==='c' ? transliterateHBM(personsNative) : persons);
 
  const titleA = isArm && variant!=='c'
   ? qArm(tNative)
@@ -828,7 +844,7 @@ function buildChicago(it, variant) {
     ? `${pubRaw}${translitIfDiff(pubRaw) ? ` [${transliterateHBM(pubRaw)}]` : ''}`
     : (variant==='c' ? transliterateHBM(pubRaw) : pubRaw);
 
-  const name = (variant==='a') ? nameA : (variant==='b' ? nameB : transliterateHBM(persons));
+  const name = (variant==='a') ? nameA : (variant==='b' ? nameB : transliterateHBM(personsNative));
   const title = (variant==='a') ? titleA : (variant==='b' ? titleB : qEng(transliterateHBM(tRaw)));
   const cont = (variant==='a') ? contA : (variant==='b' ? contB : transliterateHBM(contRaw));
   const place = (variant==='a') ? placeA : (variant==='b' ? placeB : transliterateHBM(placeRaw));
@@ -864,8 +880,8 @@ function buildAPA(it, variant) {
   const url = it.url || '';
 
   const nameB = isArm && variant === 'b'
-    ? persons + (translitIfDiff(persons) ? ` [${transliterateHBM(persons)}]` : '')
-    : (variant === 'c' ? transliterateHBM(persons) : persons);
+    ? persons + (translitIfDiff(persons) ? ` [${transliterateHBM(personsNative)}]` : '')
+    : (variant === 'c' ? transliterateHBM(personsNative) : persons);
 
   const titleB = (variant === 'b' && isArm)
     ? `${tRaw}${translitIfDiff(tRaw) ? ` [${transliterateHBM(tRaw)}]` : ''}`
